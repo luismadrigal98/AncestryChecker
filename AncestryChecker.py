@@ -85,23 +85,21 @@ def main():
             args.start_pos = start_pos
             args.end_pos = end_pos
         region_str = f"Chromosome {args.chrom}:{args.start_pos}-{args.end_pos}" if args.start_pos and args.end_pos else ("Chromosome " + args.chrom)
-        print(f"Targeting: {region_str}")
+        logger.info(f"Targeting: {region_str}")
         
         vcf_data = filter_by_region(vcf_data, args.chrom, args.start_pos, args.end_pos)
-        print(f"Retained {len(vcf_data)} variants in target region (from total {total_variants})")
+        
+        # After region filtering, set initial count for subsequent reporting
+        current_len = len(vcf_data)
+        
+        logger.info(f"Retained {len(current_len)} variants in target region (from total {total_variants})")
         
         if len(vcf_data) == 0:
-            print("Error: No variants found in specified region. Check chromosome name and positions.")
+            logger.error("Error: No variants found in specified region. Check chromosome name and positions.")
             return
     
-    # After region filtering, set initial count for subsequent reporting
-    initial_count = len(vcf_data)
-    
-    print(f"Reading relationship map: {args.relationships}")
+    logger.info(f"Reading relationship map: {args.relationships}")
     relationships = read_relationship_map(args.relationships)
-    
-    # Ensure all columns are strings
-    relationships = relationships.astype(str)
     
     # Extract sample names
     format_col_idx = vcf_data.columns.get_loc('FORMAT')
@@ -109,24 +107,26 @@ def main():
     
     # Get all unique founder names from the relationship map
     founders = set(relationships['Founder1'].tolist() + relationships['Founder2'].tolist())
-    print(f"Found {len(founders)} unique founders: {', '.join(founders)}")
+    logger.info(f"Found {len(founders)} unique founders: {', '.join(founders)}")
     
     # Get all F2 samples from the relationship map
     f2_samples = relationships[relationships['Generation'] == 'F2']['Sample'].tolist()
-    print(f"Found {len(f2_samples)} F2 samples: {', '.join(f2_samples)}")
+    logger.info(f"Found {len(f2_samples)} F2 samples: {', '.join(f2_samples)}")
     
-    print(f"Initial SNP count: {initial_count}")
+    logger.info(f"Initial variant count: {current_len}")
     
     # Apply QC filters
     if args.biallelic_only:
-        print("Filtering to keep only biallelic SNPs...")
+        logger.info("Filtering to keep only biallelic SNPs...")
         vcf_data = filter_biallelic_snps(vcf_data)
-        print(f"Retained {len(vcf_data)} biallelic SNPs")
+        current_len = len(vcf_data)
+        logger.info(f"Retained {len(current_len)} biallelic SNPs")
     
     # Filter VCF data for ancestry analysis
-    print("Filtering VCF data for founder/sample completeness...")
-    filtered_vcf = filter_vcf_data(vcf_data, list(founders), f2_samples, not args.no_missing)
-    print(f"Retained {len(filtered_vcf)} SNPs after missing data filtering")
+    logger.info("Filtering VCF data for founder/sample completeness...")
+    filtered_vcf = filter_vcf_data(vcf_data, list(founders), 
+                                    f2_samples, not args.no_missing)
+    logger.info(f"Retained {len(filtered_vcf)} SNPs after missing data filtering")
     
     # Extract genotype columns
     all_samples = list(founders) + f2_samples

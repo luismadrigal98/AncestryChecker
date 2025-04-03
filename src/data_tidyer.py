@@ -89,6 +89,36 @@ def read_relationship_map(path):
                         names=['Sample', 'Generation', 'Founder1', 'Founder2'],
                         dtype=str)  # Force all columns to be read as strings
 
+def extract_gt(value, vcf_df):
+        """
+        Extracts the genotype (GT) field from a VCF format string.
+        This function parses a colon-delimited string from a VCF file and extracts 
+        the genotype information based on the FORMAT specification.
+        Parameters
+        ----------
+        value : str or float
+            The VCF format string to parse, typically from a sample column.
+            Can be NaN, in which case NaN is returned.
+        vcf_df : pd.DataFrame
+            DataFrame containing the VCF data, used to determine the index of the GT field.
+        Returns
+        -------
+        str or numpy.nan
+            The extracted genotype value if available, or numpy.nan if the input is NaN
+            or if the GT field cannot be extracted.
+        Notes
+        -----
+        The function depends on an external variable `filtered_vcf` that contains 
+        the FORMAT column from the VCF file.
+        """
+
+        if pd.isna(value):
+            return np.nan
+        fields = value.split(':')
+        format_fields = vcf_df['FORMAT'].iloc[0].split(':')
+        gt_idx = format_fields.index('GT') if 'GT' in format_fields else 0
+        return fields[gt_idx] if gt_idx < len(fields) else np.nan
+
 def filter_vcf_data(vcf_df, founders, f2_samples, allow_missing=True):
     """
     Filter VCF data to keep only relevant SNPs for ancestry analysis.
@@ -115,11 +145,11 @@ def filter_vcf_data(vcf_df, founders, f2_samples, allow_missing=True):
     missing_f2s = [f for f in f2_samples if f not in genotype_cols]
     
     if missing_founders:
-        print(f"Warning: The following founders are not in the VCF: {', '.join(missing_founders)}")
-        print(f"Available samples in VCF: {', '.join(genotype_cols)}")
+        logger.warning(f"Warning: The following founders are not in the VCF: {', '.join(missing_founders)}")
+        logger.info(f"Available samples in VCF: {', '.join(genotype_cols)}")
     
     if missing_f2s:
-        print(f"Warning: The following F2 samples are not in the VCF: {', '.join(missing_f2s)}")
+        logger.warning(f"Warning: The following F2 samples are not in the VCF: {', '.join(missing_f2s)}")
     
     # Ensure we have at least some founders and F2 samples
     if len(founder_cols) == 0:
@@ -130,18 +160,9 @@ def filter_vcf_data(vcf_df, founders, f2_samples, allow_missing=True):
     # Create a copy of the DataFrame to avoid modifying the original
     filtered_vcf = vcf_df.copy()
     
-    # Extract genotype values (assuming FORMAT field contains 'GT')
-    def extract_gt(value):
-        if pd.isna(value):
-            return np.nan
-        fields = value.split(':')
-        format_fields = filtered_vcf['FORMAT'].iloc[0].split(':')
-        gt_idx = format_fields.index('GT') if 'GT' in format_fields else 0
-        return fields[gt_idx] if gt_idx < len(fields) else np.nan
-    
     # Apply the function to genotype columns
     for col in founder_cols + f2_cols:
-        filtered_vcf[f'{col}_GT'] = filtered_vcf[col].apply(extract_gt)
+        filtered_vcf[f'{col}_GT'] = filtered_vcf[col].apply(lambda x: extract_gt(x, filtered_vcf))
     
     # Filter rows with complete data for founders
     has_complete_founders = filtered_vcf[[f'{col}_GT' for col in founder_cols]].notna().all(axis=1)
