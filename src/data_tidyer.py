@@ -46,10 +46,21 @@ def filter_vcf_data(vcf_df, founders, f2_samples, allow_missing=True):
     founder_cols = [col for col in genotype_cols if col in founders]
     f2_cols = [col for col in genotype_cols if col in f2_samples]
     
-    # Ensure all founders and at least one F2 sample are in the data
-    if not all(founder in founder_cols for founder in founders):
-        raise ValueError("Not all founders found in VCF file")
-    if not any(f2 in f2_cols for f2 in f2_samples):
+    # Debug information
+    missing_founders = [f for f in founders if f not in genotype_cols]
+    missing_f2s = [f for f in f2_samples if f not in genotype_cols]
+    
+    if missing_founders:
+        print(f"Warning: The following founders are not in the VCF: {', '.join(missing_founders)}")
+        print(f"Available samples in VCF: {', '.join(genotype_cols)}")
+    
+    if missing_f2s:
+        print(f"Warning: The following F2 samples are not in the VCF: {', '.join(missing_f2s)}")
+    
+    # Ensure we have at least some founders and F2 samples
+    if len(founder_cols) == 0:
+        raise ValueError("No founders found in VCF file")
+    if len(f2_cols) == 0:
         raise ValueError("No F2 samples found in VCF file")
     
     # Create a copy of the DataFrame to avoid modifying the original

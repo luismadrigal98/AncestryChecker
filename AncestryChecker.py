@@ -74,13 +74,14 @@ def main():
     format_col_idx = vcf_data.columns.get_loc('FORMAT')
     sample_cols = vcf_data.columns[format_col_idx + 1:]
     
-    # Get all founder names from the relationship map
+    # Get all unique founder names from the relationship map
     founders = set(relationships['Founder1'].tolist() + relationships['Founder2'].tolist())
+    print(f"Found {len(founders)} unique founders: {', '.join(founders)}")
     
     # Get all F2 samples from the relationship map
     f2_samples = relationships[relationships['Generation'] == 'F2']['Sample'].tolist()
+    print(f"Found {len(f2_samples)} F2 samples: {', '.join(f2_samples)}")
     
-    print(f"Found {len(founders)} founders and {len(f2_samples)} F2 samples")
     print(f"Initial SNP count: {initial_count}")
     
     # Apply QC filters
