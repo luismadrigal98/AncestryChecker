@@ -229,31 +229,32 @@ def calculate_maf(vcf_df, sample_cols):
     Returns:
         pd.Series: Minor allele frequencies
     """
-    # Extract genotype values
-    gt_cols = [f'{col}_GT' for col in sample_cols]
-    
+    # FORMAT: GT:DP:AD:RO:QR:AO:QA:GL
+
+    # For each sample column, we need the observed counts of alleles, which are RO and AO
+    # The frequency fo the minor allele is min{RO, AO} / (RO + AO)
+
     # Count alleles
-    def count_alleles(row):
-        allele_counts = {'0': 0, '1': 0}
-        for col in gt_cols:
+    def get_allele_frequency(row):
+        for col in sample_cols:
             if pd.isna(row[col]):
-                continue
+                return pd.NA
             
-            # Handle different formats (0/0, 0|0, etc.)
-            genotype = row[col].replace('|', '/').split('/')
-            for allele in genotype:
-                if allele in allele_counts:
-                    allele_counts[allele] += 1
+            # Get the allele counts
+            RO_ix = row[col].split(':').index('RO')
+            AO_ix = row[col].split(':').index('AO')
+            RO = int(row[col].split(":")[RO_ix])
+            AO = int(row[col].split(":")[AO_ix])
         
-        # Calculate MAF
-        total_alleles = sum(allele_counts.values())
-        if total_alleles == 0:
-            return 0
-        
-        min_count = min(allele_counts.values())
-        return min_count / total_alleles if total_alleles > 0 else 0
+        # Calculate the minor allele frequency
+        total = RO + AO
+        if total == 0:
+            return pd.NA
+        maf = min(RO, AO) / total
+        return maf
+    # Apply the function to each row
     
-    return vcf_df.apply(count_alleles, axis=1)
+    return vcf_df.apply(get_allele_frequency, axis=1)
 
 def filter_by_maf(vcf_df, sample_cols, min_maf=0.05):
     """

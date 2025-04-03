@@ -122,36 +122,40 @@ def main():
         current_len = len(vcf_data)
         logger.info(f"Retained {len(current_len)} biallelic SNPs")
     
+    if args.min_qual > 0:
+        print(f"Filtering SNPs with QUAL < {args.min_qual}...")
+        vcf_data = filter_by_qual(filtered_vcf, args.min_qual)
+        print(f"Retained {len(filtered_vcf)} SNPs after QUAL filtering")
+
+    # Filter according to MAF values
+    if args.min_maf > 0:
+        logger.info(f"Filtering SNPs with MAF < {args.min_maf}...")
+        vcf_data = filter_by_maf(vcf_data, sample_cols, args.min_maf)
+        current_len = len(vcf_data)
+        logger.info(f"Retained {len(current_len)} SNPs after MAF filtering")
+
     # Filter VCF data for ancestry analysis
     logger.info("Filtering VCF data for founder/sample completeness...")
     filtered_vcf = filter_vcf_data(vcf_data, list(founders), 
                                     f2_samples, not args.no_missing)
-    logger.info(f"Retained {len(filtered_vcf)} SNPs after missing data filtering")
+    current_len = len(filtered_vcf)
+    logger.info(f"Retained {len(current_len)} SNPs after basic data filtering")
     
     # Extract genotype columns
     all_samples = list(founders) + f2_samples
     
-    if args.min_maf > 0:
-        print(f"Filtering SNPs with MAF < {args.min_maf}...")
-        filtered_vcf = filter_by_maf(filtered_vcf, all_samples, args.min_maf)
-        print(f"Retained {len(filtered_vcf)} SNPs after MAF filtering")
-    
     if args.max_missing_rate < 1.0:
-        print(f"Filtering SNPs with missing rate > {args.max_missing_rate}...")
+        logger.info(f"Filtering SNPs with missing rate > {args.max_missing_rate}...")
         filtered_vcf = filter_by_missing_rate(filtered_vcf, all_samples, args.max_missing_rate)
-        print(f"Retained {len(filtered_vcf)} SNPs after missing rate filtering")
-    
-    if args.min_qual > 0:
-        print(f"Filtering SNPs with QUAL < {args.min_qual}...")
-        filtered_vcf = filter_by_qual(filtered_vcf, args.min_qual)
-        print(f"Retained {len(filtered_vcf)} SNPs after QUAL filtering")
+        current_len = len(filtered_vcf)
+        logger.info(f"Retained {len(filtered_vcf)} SNPs after missing rate filtering")
     
     # Identify informative SNPs
-    print("Identifying informative SNPs...")
+    logger.info("Identifying informative SNPs...")
     founder_cols = [col for col in sample_cols if col in founders]
     informative_vcf = identify_informative_snps(filtered_vcf, founder_cols)
     
-    print(f"Final count: {len(informative_vcf)} informative SNPs (from initial {initial_count})")
+    logger.info(f"Final count: {len(informative_vcf)} informative SNPs (from initial {total_variants})")
     
     # Process each F2 sample
     for f2_id in f2_samples:
