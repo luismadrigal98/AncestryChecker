@@ -12,20 +12,6 @@ This program checks the ancestry of a given individual in a genealogy defined by
 
 """
 
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-
-"""
-Main program for AncestryChecker.
-This program checks the ancestry of a given individual in a genealogy defined by the user.
-
-@author: Luis Javier Madrigal-Roca
-
-@date: 2025-04-01
-@version: 1.0
-
-"""
-
 import argparse
 import os
 import pandas as pd
@@ -141,3 +127,6 @@ def main():
             print(f"Warning: Sample {f2_id} not found in VCF data, skipping...")
     
     print(f"Results saved to {args.output} directory")
+
+if __name__ == "__main__":
+    main()
