@@ -31,7 +31,8 @@ def parse_arguments():
     parser.add_argument('-r', '--relationships', required=True, help='Path to the relationship map file')
     parser.add_argument('-o', '--output', default='ancestry_results', help='Output directory')
     parser.add_argument('--no-missing', action='store_true', help='Do not allow missing data in samples')
-    
+    parser.add_argument('--ref-founder', type=str, help='Specify the reference founder (default: first founder)')
+
     # QC-related arguments
     parser.add_argument('--biallelic-only', action='store_true', 
                         help='Filter to keep only biallelic SNPs')
@@ -140,7 +141,7 @@ def main():
         
         if f2_col in informative_vcf.columns:
             print(f"Analyzing ancestry for sample {f2_id}...")
-            ancestry_results = determine_ancestry(informative_vcf, relationships, f2_col)
+            ancestry_results = determine_ancestry(informative_vcf, relationships, f2_col, args.ref_founder)
 
             if 'Novel' in ancestry_results['Ancestry'].values:
                 novel_count = (ancestry_results['Ancestry'] == 'Novel').sum()
