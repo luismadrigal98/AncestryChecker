@@ -30,7 +30,7 @@ def determine_ancestry(vcf_data, relationships, sample_col):
         pd.DataFrame: DataFrame with ancestry assignments
     """
     # Get the founders for this sample
-    sample_id = sample_col.split('_')[0]  # Assuming the column name is in format "sample_GT"
+    sample_id = sample_col.split('_')[0]
     sample_info = relationships[relationships['Sample'] == sample_id]
     
     if len(sample_info) == 0:
@@ -84,7 +84,12 @@ def plot_ancestry(ancestry_data, sample_id, output_dir):
     # Get unique chromosomes
     chromosomes = ancestry_data['CHROM'].unique()
     
-    plt.figure(figsize=(15, 10))
+    if len(chromosomes) == 0:
+        print(f"Warning: No data to plot for sample {sample_id}")
+        return
+    
+    # Adjust figure size based on number of chromosomes
+    plt.figure(figsize=(15, max(5, 2 * len(chromosomes))))
     
     # Color mapping
     colors = {'Founder1': 'blue', 'Founder2': 'red', 'Both': 'purple', 'Novel': 'green', 'Missing': 'gray'}
@@ -92,25 +97,48 @@ def plot_ancestry(ancestry_data, sample_id, output_dir):
     for i, chrom in enumerate(chromosomes):
         chrom_data = ancestry_data[ancestry_data['CHROM'] == chrom]
         
+        # Skip if no data for this chromosome
+        if len(chrom_data) == 0:
+            continue
+            
         # Plot positions
         plt.subplot(len(chromosomes), 1, i+1)
         
         for ancestry, color in colors.items():
             subset = chrom_data[chrom_data['Ancestry'] == ancestry]
-            plt.scatter(subset['POS'], [i] * len(subset), c=color, s=5, label=ancestry if i == 0 else "")
+            if len(subset) > 0:  # Only plot if we have data for this ancestry
+                plt.scatter(subset['POS'], [0.5] * len(subset), c=color, s=5, label=ancestry if i == 0 else "")
         
         plt.title(f'Chromosome {chrom}')
         plt.ylabel('Ancestry')
-        plt.xlim(min(chrom_data['POS']), max(chrom_data['POS']))
+        
+        # Set x-axis limits based on data or specified range
+        min_pos = min(chrom_data['POS'])
+        max_pos = max(chrom_data['POS'])
+        plt.xlim(min_pos, max_pos)
         plt.yticks([])
+        
+        # Add position markers
+        plt.xlabel(f'Position (Range: {min_pos:,} - {max_pos:,})')
     
     # Add legend to the first subplot
-    plt.subplot(len(chromosomes), 1, 1)
-    plt.legend(loc='upper right')
+    if len(chromosomes) > 0:
+        plt.subplot(len(chromosomes), 1, 1)
+        plt.legend(loc='upper right')
     
     plt.tight_layout()
-    plt.savefig(os.path.join(output_dir, f'{sample_id}_ancestry.png'))
+    
+    # Add region info to filename if analyzing a specific region
+    filename = f'{sample_id}_ancestry'
+    if len(chromosomes) == 1:
+        chrom = chromosomes[0]
+        min_pos = min(ancestry_data['POS'])
+        max_pos = max(ancestry_data['POS'])
+        filename += f'_{chrom}_{min_pos}_{max_pos}'
+    
+    # Save plot and data
+    plt.savefig(os.path.join(output_dir, f'{filename}.png'))
     plt.close()
     
     # Also save the data to a CSV file
-    ancestry_data.to_csv(os.path.join(output_dir, f'{sample_id}_ancestry.csv'), index=False)
+    ancestry_data.to_csv(os.path.join(output_dir, f'{filename}.csv'), index=False)

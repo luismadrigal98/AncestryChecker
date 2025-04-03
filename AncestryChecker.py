@@ -21,9 +21,9 @@ from src.vcf_reader_utilities import read_vcf
 from src.analysis_utilities import determine_ancestry, plot_ancestry
 from src.data_tidyer import (
     read_relationship_map, filter_vcf_data, identify_informative_snps,
-    filter_biallelic_snps, filter_by_maf, filter_by_missing_rate, filter_by_qual
+    filter_biallelic_snps, filter_by_maf, filter_by_missing_rate, filter_by_qual,
+    filter_by_region
 )
-
 def parse_arguments():
     """Parse command-line arguments."""
     parser = argparse.ArgumentParser(description='AncestryChecker: Check the ancestry of F2 individuals.')
@@ -42,6 +42,14 @@ def parse_arguments():
     parser.add_argument('--min-qual', type=float, default=0.0, 
                         help='Minimum QUAL value for variants (default: 0.0 = no filtering)')
     
+    # Region targeting arguments
+    parser.add_argument('-c', '--chrom', type=str, 
+                        help='Target a specific chromosome (e.g., "1", "Chr1")')
+    parser.add_argument('--start-pos', type=int, 
+                        help='Start position for targeted analysis')
+    parser.add_argument('--end-pos', type=int, 
+                        help='End position for targeted analysis')
+    
     return parser.parse_args()
 
 def main():
@@ -52,6 +60,23 @@ def main():
     print(f"Reading VCF file: {args.vcf}")
     vcf_data = read_vcf(args.vcf)
     initial_count = len(vcf_data)
+    
+    # Apply region filtering if specified
+    if args.chrom or args.start_pos or args.end_pos:
+        print("Applying region filtering...")
+        region_str = f"Chromosome {args.chrom if args.chrom else 'All'}"
+        if args.start_pos:
+            region_str += f", from position {args.start_pos}"
+        if args.end_pos:
+            region_str += f" to {args.end_pos}"
+        print(f"Targeting: {region_str}")
+        
+        vcf_data = filter_by_region(vcf_data, args.chrom, args.start_pos, args.end_pos)
+        print(f"Retained {len(vcf_data)} variants in target region")
+        
+        if len(vcf_data) == 0:
+            print("Error: No variants found in specified region. Check chromosome name and positions.")
+            return
     
     print(f"Reading relationship map: {args.relationships}")
     relationships = read_relationship_map(args.relationships)

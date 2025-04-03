@@ -12,6 +12,34 @@ This module provides functions to clean and preprocess VCF data for ancestry ana
 import pandas as pd
 import numpy as np
 
+def filter_by_region(vcf_df, chrom=None, start_pos=None, end_pos=None):
+    """
+    Filter VCF data by genomic region.
+    
+    Args:
+        vcf_df (pd.DataFrame): DataFrame from read_vcf function
+        chrom (str): Chromosome to filter for (e.g., "1", "Chr1")
+        start_pos (int): Start position for region filtering
+        end_pos (int): End position for region filtering
+        
+    Returns:
+        pd.DataFrame: Filtered VCF data
+    """
+    filtered_df = vcf_df.copy()
+    
+    if chrom is not None:
+        # Handle different chromosome formats (with or without "Chr" prefix)
+        chrom_matches = filtered_df['CHROM'].str.contains(str(chrom), case=False)
+        filtered_df = filtered_df[chrom_matches]
+        
+    if start_pos is not None:
+        filtered_df = filtered_df[filtered_df['POS'] >= start_pos]
+        
+    if end_pos is not None:
+        filtered_df = filtered_df[filtered_df['POS'] <= end_pos]
+    
+    return filtered_df
+
 def read_relationship_map(path):
     """
     Read and parse a relationship map file.
