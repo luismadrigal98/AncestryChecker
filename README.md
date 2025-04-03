@@ -1,6 +1,6 @@
 # Ancestry Checker
 
-This program will check the ancestry of an F2 individual and its correspondence with the expectations under a NAM design. If the genome of the founder line per family are known, the expectations are that the F2 is a mosaic of the founder genomes.
+This program will check the ancestry of an F2 individual and its correspondence with the expectations under a NAM design. If the genome of the founder line per family are known, the expectations are that the F2 is a mosaic of the founder genomes. The program will also make quality checking over the vcf, preserving only for the ancestry analysis SNPs and calls where we have data completeness for all founders and at least one actual sample. We defined the filtering in that regard because the samples could have been sequenced at low coverage. In that case, it is likely to have missing data in at least one of those samples per site. [A flag allow to consider no missing data at all in case of high coverage sequencing for the samples]
 
 # Input
 
