@@ -17,20 +17,29 @@ import pandas as pd
 import os
 import matplotlib.pyplot as plt
 
+def normalize_genotype(gt):
+        if pd.isna(gt) or gt in ['.', './.', '.', '.|.']:
+            return None
+            
+        # Extract just the GT part if it contains colons
+        if ':' in gt:
+            gt = gt.split(':')[0]
+            
+        # Remove phasing and sort alleles for consistent comparison
+        gt = gt.replace('|', '/').replace('\\', '/')  # Handle different separators
+        
+        # Handle missing alleles
+        if '.' in gt:
+            return None
+            
+        return gt
+
 def determine_ancestry(vcf_data, relationships, sample_col):
     """
     Determine the ancestry of each variant in an F2 individual.
-    
-    Args:
-        vcf_data (pd.DataFrame): Processed VCF data
-        relationships (pd.DataFrame): Relationship map
-        sample_col (str): Column name for the F2 sample
-        
-    Returns:
-        pd.DataFrame: DataFrame with ancestry assignments
     """
     # Get the founders for this sample
-    sample_id = sample_col.split('_')[0]
+    sample_id = sample_col.split('_')[0]  # Extract sample ID from column name
     sample_info = relationships[relationships['Sample'] == sample_id]
     
     if len(sample_info) == 0:
@@ -53,20 +62,31 @@ def determine_ancestry(vcf_data, relationships, sample_col):
         'Founder2': vcf_data[founder2_col]
     })
     
-    # Determine ancestry
+    # Apply normalization
+    for col in ['F2', 'Founder1', 'Founder2']:
+        results[f'{col}_norm'] = results[col].apply(normalize_genotype)
+    
+    # Determine ancestry with normalized genotypes
     def assign_ancestry(row):
-        if pd.isna(row['F2']):
+        if row['F2_norm'] is None:
             return 'Missing'
-        elif row['F2'] == row['Founder1'] and row['F2'] != row['Founder2']:
+        elif row['Founder1_norm'] is None or row['Founder2_norm'] is None:
+            return 'Missing_Founder'  # Special case: founder data missing
+        elif row['F2_norm'] == row['Founder1_norm'] and row['F2_norm'] != row['Founder2_norm']:
             return 'Founder1'
-        elif row['F2'] == row['Founder2'] and row['F2'] != row['Founder1']:
+        elif row['F2_norm'] == row['Founder2_norm'] and row['F2_norm'] != row['Founder1_norm']:
             return 'Founder2'
-        elif row['F2'] == row['Founder1'] and row['F2'] == row['Founder2']:
+        elif row['F2_norm'] == row['Founder1_norm'] and row['F2_norm'] == row['Founder2_norm']:
             return 'Both'  # Uninformative
         else:
             return 'Novel'  # New variant not in founders
     
     results['Ancestry'] = results.apply(assign_ancestry, axis=1)
+    
+    # Add debug columns before dropping them if needed
+    debug_cols = ['F2_norm', 'Founder1_norm', 'Founder2_norm']
+    results = results.drop(debug_cols, axis=1)
+    
     return results
 
 def plot_ancestry(ancestry_data, sample_id, output_dir):

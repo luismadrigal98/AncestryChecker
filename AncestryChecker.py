@@ -141,6 +141,17 @@ def main():
         if f2_col in informative_vcf.columns:
             print(f"Analyzing ancestry for sample {f2_id}...")
             ancestry_results = determine_ancestry(informative_vcf, relationships, f2_col)
+
+            if 'Novel' in ancestry_results['Ancestry'].values:
+                novel_count = (ancestry_results['Ancestry'] == 'Novel').sum()
+                print(f"Found {novel_count} novel variants ({novel_count/len(ancestry_results)*100:.2f}%)")
+                
+                # Show a few examples of novel variants for debugging
+                print("Examples of novel variants:")
+                novel_examples = ancestry_results[ancestry_results['Ancestry'] == 'Novel'].head(3)
+                for _, row in novel_examples.iterrows():
+                    print(f"  CHROM={row['CHROM']}, POS={row['POS']}")
+                    print(f"    F2={row['F2']}, Founder1={row['Founder1']}, Founder2={row['Founder2']}")
             
             print(f"Creating plots for sample {f2_id}...")
             plot_ancestry(ancestry_results, f2_id, args.output)
