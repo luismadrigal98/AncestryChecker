@@ -60,7 +60,7 @@ def main():
     # Read input files
     print(f"Reading VCF file: {args.vcf}")
     vcf_data = read_vcf(args.vcf)
-    initial_count = len(vcf_data)
+    total_variants = len(vcf_data)  # Total before any filtering
     
     # Apply region filtering if specified
     if args.chrom or args.start_pos or args.end_pos:
@@ -73,11 +73,14 @@ def main():
         print(f"Targeting: {region_str}")
         
         vcf_data = filter_by_region(vcf_data, args.chrom, args.start_pos, args.end_pos)
-        print(f"Retained {len(vcf_data)} variants in target region")
+        print(f"Retained {len(vcf_data)} variants in target region (from total {total_variants})")
         
         if len(vcf_data) == 0:
             print("Error: No variants found in specified region. Check chromosome name and positions.")
             return
+    
+    # After region filtering, set initial count for subsequent reporting
+    initial_count = len(vcf_data)
     
     print(f"Reading relationship map: {args.relationships}")
     relationships = read_relationship_map(args.relationships)
@@ -152,7 +155,14 @@ def main():
                 novel_examples = ancestry_results[ancestry_results['Ancestry'] == 'Novel'].head(3)
                 for _, row in novel_examples.iterrows():
                     print(f"  CHROM={row['CHROM']}, POS={row['POS']}")
-                    print(f"    F2={row['F2']}, Founder1={row['Founder1']}, Founder2={row['Founder2']}")
+                    # Use dynamic column names instead of hardcoded ones
+                    f2_col = 'F2'  # This should always be present
+                    # Get founder columns (excluding standard columns)
+                    founder_cols = [col for col in row.index if col not in 
+                                ['CHROM', 'POS', 'REF', 'ALT', 'F2', 'Ancestry']]
+                    if founder_cols:
+                        print(f"    F2={row[f2_col]}, {founder_cols[0]}={row[founder_cols[0]]}, " +
+                            f"{founder_cols[1]}={row[founder_cols[1]] if len(founder_cols) > 1 else 'N/A'}")
             
             print(f"Creating plots for sample {f2_id}...")
             plot_ancestry(ancestry_results, f2_id, args.output)

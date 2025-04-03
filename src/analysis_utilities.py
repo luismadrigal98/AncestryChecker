@@ -19,7 +19,24 @@ import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.backends.backend_pdf import PdfPages
 
-def normalize_genotype(gt):
+def normalize_genotype(gt):    
+        """
+        Normalizes a genotype string by handling missing values, extracting the genotype part,
+        and ensuring consistent formatting for comparison.
+        Args:
+            gt (str): The genotype string to normalize. It may include phasing, colons, or missing values.
+        Returns:
+            str or None: The normalized genotype string with consistent formatting, or None if the input
+            is missing or invalid.
+        Notes:
+            - Missing values (e.g., '.', './.', '.|.') are converted to None.
+            - If the genotype contains additional information separated by colons, only the part before
+                the first colon is retained.
+            - Phasing indicators (e.g., '|', '\\') are replaced with '/' for consistency.
+            - Genotypes containing missing alleles (e.g., '.') are also converted to None.
+        
+        """
+        
         if pd.isna(gt) or gt in ['.', './.', '.', '.|.']:
             return None
             
@@ -36,7 +53,28 @@ def normalize_genotype(gt):
             
         return gt
 
-def assign_ancestry(row):
+def assign_ancestry(row):  
+        """
+        Determines the ancestry of an individual based on allele information from F2, 
+        reference founder, and other founder.
+        Args:
+            row (dict): A dictionary containing the following keys:
+                - 'F2_alleles' (list): A list of two integers representing the alleles of the F2 individual.
+                - 'RefFounder_alleles' (list): A list of two integers representing the alleles of the reference founder.
+                - 'OtherFounder_alleles' (list): A list of two integers representing the alleles of the other founder.
+        Returns:
+            str: A string indicating the ancestry classification:
+                - 'Missing': F2 alleles are missing.
+                - 'Missing_Founder': Reference or other founder alleles are missing.
+                - 'RefFounder': Ancestry is from the reference founder.
+                - 'OtherFounder': Ancestry is from the other founder.
+                - 'Both': Ancestry is uninformative and could be from either founder.
+                - 'Mixed': Clear case of mixed ancestry.
+                - 'Novel': Unexpected allele combination.
+                - 'Complex': Multiallelic variants or parsing errors.
+
+        """
+        
         f2 = row['F2_alleles']
         ref = row['RefFounder_alleles']
         other = row['OtherFounder_alleles']
@@ -91,6 +129,54 @@ def assign_ancestry(row):
         else:
             return 'Complex'
 
+    # Function to parse a genotype into a list of alleles (0s and 1s)
+def parse_genotype(gt):
+    """
+    Parses a genotype string and extracts allele information.
+    This function processes a genotype string (commonly found in VCF files) 
+    and returns a list of alleles as integers. It handles missing data, 
+    separators, and ensures the output is in a consistent format.
+    Args:
+        gt (str): The genotype string to parse. It may include alleles, 
+                    separators ('|', '/', '\\'), and additional information 
+                    separated by colons.
+    Returns:
+        list[int] or None: A list of alleles as integers if parsing is 
+                            successful, or None if the input is invalid 
+                            or contains missing data.
+    Notes:
+        - If the genotype string is missing (NaN or '.'), the function 
+            returns None.
+        - If the genotype string contains colons, only the part before 
+            the first colon is considered.
+        - Separators ('|', '\\') are replaced with '/' for uniformity.
+        - If any allele is missing ('.'), the function returns None.
+        - Alleles are extracted as integers. If no valid alleles are 
+            found, the function returns None.
+
+    """
+    
+    if pd.isna(gt) or gt == '.':
+        return None
+        
+    # Extract just the GT part if it contains colons
+    if ':' in gt:
+        gt = gt.split(':')[0]
+        
+    # Replace separators and extract digits
+    gt = gt.replace('|', '/').replace('\\', '/')
+    
+    # If any allele is missing (.), return None
+    if '.' in gt:
+        return None
+        
+    # Extract alleles as integers (0, 1, etc.)
+    try:
+        alleles = [int(a) for a in gt if a.isdigit()]
+        return alleles if alleles else None
+    except:
+        return None
+
 def determine_ancestry(vcf_data, relationships, sample_col, ref_founder='664c'):
     """
     Determine the ancestry of each variant in an F2 individual,
@@ -139,29 +225,6 @@ def determine_ancestry(vcf_data, relationships, sample_col, ref_founder='664c'):
         'OtherFounder': vcf_data[other_founder_col]
     })
     
-    # Function to parse a genotype into a list of alleles (0s and 1s)
-    def parse_genotype(gt):
-        if pd.isna(gt) or gt == '.':
-            return None
-            
-        # Extract just the GT part if it contains colons
-        if ':' in gt:
-            gt = gt.split(':')[0]
-            
-        # Replace separators and extract digits
-        gt = gt.replace('|', '/').replace('\\', '/')
-        
-        # If any allele is missing (.), return None
-        if '.' in gt:
-            return None
-            
-        # Extract alleles as integers (0, 1, etc.)
-        try:
-            alleles = [int(a) for a in gt if a.isdigit()]
-            return alleles if alleles else None
-        except:
-            return None
-    
     # Parse genotypes for all samples
     results['F2_alleles'] = results['F2'].apply(parse_genotype)
     results['RefFounder_alleles'] = results['RefFounder'].apply(parse_genotype)
@@ -185,171 +248,6 @@ def determine_ancestry(vcf_data, relationships, sample_col, ref_founder='664c'):
     results = results.rename(columns={
         'RefFounder': ref_founder,
         'OtherFounder': founder1 if founder2 == ref_founder else founder2
-    })
-    
-    return results
-
-def determine_ancestry(vcf_data, relationships, sample_col, ref_founder=None):
-    """
-    Determine the ancestry of each variant in an F2 individual.
-    
-    Args:
-        vcf_data (pd.DataFrame): Processed VCF data
-        relationships (pd.DataFrame): Relationship map
-        sample_col (str): Column name for the F2 sample
-        ref_founder (str, optional): Name of reference founder. If None, 
-                                    the first founder will be used.
-        
-    Returns:
-        pd.DataFrame: DataFrame with ancestry assignments
-    """
-    # Get the founders for this sample
-    sample_id = sample_col.split('_')[0]  # Extract sample ID from column name
-    sample_info = relationships[relationships['Sample'] == sample_id]
-    
-    if len(sample_info) == 0:
-        raise ValueError(f"Sample {sample_id} not found in relationship map")
-    
-    founder1 = sample_info['Founder1'].iloc[0]
-    founder2 = sample_info['Founder2'].iloc[0]
-    
-    # If no reference founder is specified, use the first founder
-    if ref_founder is None:
-        ref_founder = founder1
-        print(f"No reference founder specified. Using {founder1} as reference.")
-    
-    # Identify which founder is the reference
-    if founder1 == ref_founder:
-        ref_founder_col = f"{founder1}_GT"
-        other_founder_col = f"{founder2}_GT"
-        other_founder_name = founder2
-    elif founder2 == ref_founder:
-        ref_founder_col = f"{founder2}_GT"
-        other_founder_col = f"{founder1}_GT"
-        other_founder_name = founder1
-    else:
-        raise ValueError(f"Reference founder {ref_founder} not found in relationship for {sample_id}. "
-                         f"Available founders: {founder1}, {founder2}")
-    
-    # Create a new DataFrame for ancestry results
-    results = pd.DataFrame({
-        'CHROM': vcf_data['CHROM'],
-        'POS': vcf_data['POS'],
-        'REF': vcf_data['REF'],
-        'ALT': vcf_data['ALT'],
-        'F2': vcf_data[sample_col],
-        'RefFounder': vcf_data[ref_founder_col],
-        'OtherFounder': vcf_data[other_founder_col]
-    })
-    
-    # Function to parse a genotype into a list of alleles (0s and 1s)
-    def parse_genotype(gt):
-        if pd.isna(gt) or gt == '.':
-            return None
-            
-        # Extract just the GT part if it contains colons
-        if ':' in gt:
-            gt = gt.split(':')[0]
-            
-        # Replace separators and extract digits
-        gt = gt.replace('|', '/').replace('\\', '/')
-        
-        # If any allele is missing (.), return None
-        if '.' in gt:
-            return None
-            
-        # Extract alleles as integers (0, 1, etc.)
-        try:
-            alleles = [int(a) for a in gt if a.isdigit()]
-            return alleles if alleles else None
-        except:
-            return None
-    
-    # Parse genotypes for all samples
-    results['F2_alleles'] = results['F2'].apply(parse_genotype)
-    results['RefFounder_alleles'] = results['RefFounder'].apply(parse_genotype)
-    results['OtherFounder_alleles'] = results['OtherFounder'].apply(parse_genotype)
-    
-    # Determine ancestry based on allele combinations
-    def assign_ancestry(row):
-        f2 = row['F2_alleles']
-        ref = row['RefFounder_alleles']
-        other = row['OtherFounder_alleles']
-        
-        # Handle missing data
-        if f2 is None:
-            return 'Missing'
-        if ref is None or other is None:
-            return 'Missing_Founder'
-            
-        # For simplicity, sort the alleles to handle phasing differences
-        f2.sort()
-        ref.sort()
-        other.sort()
-        
-        # Homozygous reference in F2 (0/0)
-        if f2 == [0, 0]:
-            if ref == [0, 0] and other != [0, 0]:
-                return 'RefFounder'
-            elif other == [0, 0] and ref != [0, 0]:
-                return 'OtherFounder'
-            elif ref == [0, 0] and other == [0, 0]:
-                return 'Both'
-            else:
-                return 'Novel'
-        
-        # Heterozygous in F2 (0/1)
-        elif sorted(f2) == [0, 1]:
-            if ref == [0, 0] and other == [1, 1]:
-                return 'Mixed'
-            elif ref == [0, 1] and other == [0, 0]:
-                return 'RefFounder'
-            elif ref == [0, 0] and other == [0, 1]:
-                return 'OtherFounder'
-            elif ref == [0, 1] and other == [0, 1]:
-                return 'Both'
-            else:
-                return 'Novel'
-        
-        # Homozygous alternate in F2 (1/1)
-        elif f2 == [1, 1]:
-            if ref != [1, 1] and other == [1, 1]:
-                return 'OtherFounder'
-            elif ref == [1, 1] and other != [1, 1]:
-                return 'RefFounder'
-            elif ref == [1, 1] and other == [1, 1]:
-                return 'Both'
-            else:
-                return 'Novel'
-        
-        # Handle other cases (multiallelic variants or parsing errors)
-        else:
-            return 'Complex'
-    
-    results['Ancestry'] = results.apply(assign_ancestry, axis=1)
-    
-    # Create human-readable ancestry labels
-    ancestry_mapping = {
-        'RefFounder': ref_founder,
-        'OtherFounder': other_founder_name,
-        'Both': 'Both',
-        'Mixed': 'Mixed',
-        'Novel': 'Novel',
-        'Complex': 'Complex',
-        'Missing': 'Missing',
-        'Missing_Founder': 'Missing_Founder'
-    }
-    
-    # Apply the mapping but keep descriptive labels for non-founder specific categories
-    results['Ancestry'] = results['Ancestry'].map(lambda x: ancestry_mapping.get(x, x))
-    
-    # Clean up temporary columns
-    results = results.drop(['F2_alleles', 'RefFounder_alleles', 'OtherFounder_alleles'], axis=1)
-    
-    # Rename columns for clarity in the output
-    results = results.rename(columns={
-        'RefFounder': ref_founder,
-        'OtherFounder': other_founder_name
     })
     
     return results
