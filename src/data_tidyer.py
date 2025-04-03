@@ -11,6 +11,29 @@ This module provides functions to clean and preprocess VCF data for ancestry ana
 
 import pandas as pd
 import numpy as np
+import logging
+
+# Setting up logging
+logging.basicConfig(
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    level=logging.INFO
+)
+logger = logging.getLogger(__name__)
+
+# Extract just the chromosome number (removing any 'Chr_', 'chr', etc. prefixes)
+def normalize_chrom(x):
+    # Convert to lowercase string
+    x = str(x).lower()
+    # Remove common prefixes
+    for prefix in ['chr_', 'chr', 'chromosome_', 'chromosome']:
+        if x.startswith(prefix):
+            x = x[len(prefix):]
+    # Handle leading zeros (e.g., '01' -> '1')
+    try:
+        return str(int(x))
+    except ValueError:
+        # For non-numeric chromosomes (e.g., 'X', 'Y', 'MT')
+        return x
 
 def filter_by_region(vcf_df, chrom=None, start_pos=None, end_pos=None):
     """
@@ -28,10 +51,21 @@ def filter_by_region(vcf_df, chrom=None, start_pos=None, end_pos=None):
     filtered_df = vcf_df.copy()
     
     if chrom is not None:
-        # Handle different chromosome formats (with or without "Chr" prefix)
-        chrom_matches = filtered_df['CHROM'].str.contains(str(chrom), case=False)
+        # Convert chrom to string if it's not already
+        chrom = str(chrom)
+                
+        # Get normalized version of the target chromosome
+        target_chrom = normalize_chrom(chrom)
+        
+        # Apply the same normalization to the chromosome column and compare
+        chrom_matches = filtered_df['CHROM'].apply(normalize_chrom) == target_chrom
         filtered_df = filtered_df[chrom_matches]
         
+        # Print debug info
+        if len(filtered_df) == 0:
+            logger.warning(f"Warning: No variants found for chromosome '{chrom}'")
+            logger.info(f"Available chromosomes: {', '.join(filtered_df['CHROM'].unique())}")
+
     if start_pos is not None:
         filtered_df = filtered_df[filtered_df['POS'] >= start_pos]
         

@@ -18,8 +18,8 @@ Input includes:
 123 F2  444c    664c
 657 F2  767c    664c
 
-...
+(...)
 
 ```
 
-AS can be seen, the format is a plain txt file, with '\t' as separator, and the first column states the ID of the sample, the second one, the filial position in the crosses, the third and fourth columns states the founders of the family.
+As it can be seen, the format is a plain txt file, with '\t' as separator, and the first column states the ID of the sample, the second one, the filial position in the crosses, the third and fourth columns states the founders of the family.

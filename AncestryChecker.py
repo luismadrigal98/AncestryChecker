@@ -13,9 +13,9 @@ This program checks the ancestry of a given individual in a genealogy defined by
 """
 
 import argparse
-import os
 import pandas as pd
 import numpy as np
+import logging
 import matplotlib.pyplot as plt
 from src.vcf_reader_utilities import read_vcf
 from src.analysis_utilities import determine_ancestry, plot_ancestry
@@ -24,6 +24,15 @@ from src.data_tidyer import (
     filter_biallelic_snps, filter_by_maf, filter_by_missing_rate, filter_by_qual,
     filter_by_region
 )
+
+# Setting up logging
+logging.basicConfig(
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    level=logging.INFO
+)
+
+logger = logging.getLogger(__name__)
+
 def parse_arguments():
     """Parse command-line arguments."""
     parser = argparse.ArgumentParser(description='AncestryChecker: Check the ancestry of F2 individuals.')
@@ -44,12 +53,11 @@ def parse_arguments():
                         help='Minimum QUAL value for variants (default: 0.0 = no filtering)')
     
     # Region targeting arguments
-    parser.add_argument('-c', '--chrom', type=str, 
-                        help='Target a specific chromosome (e.g., "1", "Chr1")')
-    parser.add_argument('--start-pos', type=int, 
-                        help='Start position for targeted analysis')
-    parser.add_argument('--end-pos', type=int, 
-                        help='End position for targeted analysis')
+    parser.add_argument(
+        '-r', '--ROI',
+        default=None,
+        help='Region of interest in the format "chrom:start-end" (e.g., "1:1000-2000") or "chrom" only for a specific chromosome'
+        )
     
     return parser.parse_args()
 
@@ -58,18 +66,25 @@ def main():
     args = parse_arguments()
     
     # Read input files
-    print(f"Reading VCF file: {args.vcf}")
+    logger.info(f"Reading VCF file: {args.vcf}")
     vcf_data = read_vcf(args.vcf)
     total_variants = len(vcf_data)  # Total before any filtering
     
     # Apply region filtering if specified
-    if args.chrom or args.start_pos or args.end_pos:
-        print("Applying region filtering...")
-        region_str = f"Chromosome {args.chrom if args.chrom else 'All'}"
-        if args.start_pos:
-            region_str += f", from position {args.start_pos}"
-        if args.end_pos:
-            region_str += f" to {args.end_pos}"
+    if args.ROI is not None:
+        logger.info("Applying region filtering...")
+        only_chrom = False if ':' in args.ROI else True
+        if only_chrom:
+            args.chrom = args.ROI
+            args.start_pos = None
+            args.end_pos = None
+        else:
+            chrom, positions = args.ROI.split(':')
+            start_pos, end_pos = map(int, positions.split('-'))
+            args.chrom = chrom
+            args.start_pos = start_pos
+            args.end_pos = end_pos
+        region_str = f"Chromosome {args.chrom}:{args.start_pos}-{args.end_pos}" if args.start_pos and args.end_pos else ("Chromosome " + args.chrom)
         print(f"Targeting: {region_str}")
         
         vcf_data = filter_by_region(vcf_data, args.chrom, args.start_pos, args.end_pos)
