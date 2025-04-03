@@ -56,6 +56,9 @@ def main():
     print(f"Reading relationship map: {args.relationships}")
     relationships = read_relationship_map(args.relationships)
     
+    # Ensure all columns are strings
+    relationships = relationships.astype(str)
+    
     # Extract sample names
     format_col_idx = vcf_data.columns.get_loc('FORMAT')
     sample_cols = vcf_data.columns[format_col_idx + 1:]

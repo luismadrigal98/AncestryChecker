@@ -22,8 +22,10 @@ def read_relationship_map(path):
     Returns:
         pd.DataFrame: DataFrame containing the relationship information
     """
+    # Explicitly set dtype=str for all columns to prevent numeric interpretation
     return pd.read_csv(path, sep='\t', header=None, 
-                        names=['Sample', 'Generation', 'Founder1', 'Founder2'])
+                        names=['Sample', 'Generation', 'Founder1', 'Founder2'],
+                        dtype=str)  # Force all columns to be read as strings
 
 def filter_vcf_data(vcf_df, founders, f2_samples, allow_missing=True):
     """
