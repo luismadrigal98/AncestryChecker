@@ -33,7 +33,10 @@ import numpy as np
 import matplotlib.pyplot as plt
 from src.vcf_reader_utilities import read_vcf
 from src.analysis_utilities import determine_ancestry, plot_ancestry
-from src.data_tidyer import read_relationship_map, filter_vcf_data, identify_informative_snps
+from src.data_tidyer import (
+    read_relationship_map, filter_vcf_data, identify_informative_snps,
+    filter_biallelic_snps, filter_by_maf, filter_by_missing_rate, filter_by_qual
+)
 
 def parse_arguments():
     """Parse command-line arguments."""
@@ -42,6 +45,16 @@ def parse_arguments():
     parser.add_argument('-r', '--relationships', required=True, help='Path to the relationship map file')
     parser.add_argument('-o', '--output', default='ancestry_results', help='Output directory')
     parser.add_argument('--no-missing', action='store_true', help='Do not allow missing data in samples')
+    
+    # QC-related arguments
+    parser.add_argument('--biallelic-only', action='store_true', 
+                        help='Filter to keep only biallelic SNPs')
+    parser.add_argument('--min-maf', type=float, default=0.0, 
+                        help='Minimum minor allele frequency (default: 0.0 = no filtering)')
+    parser.add_argument('--max-missing-rate', type=float, default=1.0, 
+                        help='Maximum rate of missing data per SNP (default: 1.0 = no filtering)')
+    parser.add_argument('--min-qual', type=float, default=0.0, 
+                        help='Minimum QUAL value for variants (default: 0.0 = no filtering)')
     
     return parser.parse_args()
 
@@ -52,6 +65,7 @@ def main():
     # Read input files
     print(f"Reading VCF file: {args.vcf}")
     vcf_data = read_vcf(args.vcf)
+    initial_count = len(vcf_data)
     
     print(f"Reading relationship map: {args.relationships}")
     relationships = read_relationship_map(args.relationships)
@@ -67,17 +81,43 @@ def main():
     f2_samples = relationships[relationships['Generation'] == 'F2']['Sample'].tolist()
     
     print(f"Found {len(founders)} founders and {len(f2_samples)} F2 samples")
+    print(f"Initial SNP count: {initial_count}")
     
-    # Filter VCF data
-    print("Filtering VCF data...")
+    # Apply QC filters
+    if args.biallelic_only:
+        print("Filtering to keep only biallelic SNPs...")
+        vcf_data = filter_biallelic_snps(vcf_data)
+        print(f"Retained {len(vcf_data)} biallelic SNPs")
+    
+    # Filter VCF data for ancestry analysis
+    print("Filtering VCF data for founder/sample completeness...")
     filtered_vcf = filter_vcf_data(vcf_data, list(founders), f2_samples, not args.no_missing)
+    print(f"Retained {len(filtered_vcf)} SNPs after missing data filtering")
+    
+    # Extract genotype columns
+    all_samples = list(founders) + f2_samples
+    
+    if args.min_maf > 0:
+        print(f"Filtering SNPs with MAF < {args.min_maf}...")
+        filtered_vcf = filter_by_maf(filtered_vcf, all_samples, args.min_maf)
+        print(f"Retained {len(filtered_vcf)} SNPs after MAF filtering")
+    
+    if args.max_missing_rate < 1.0:
+        print(f"Filtering SNPs with missing rate > {args.max_missing_rate}...")
+        filtered_vcf = filter_by_missing_rate(filtered_vcf, all_samples, args.max_missing_rate)
+        print(f"Retained {len(filtered_vcf)} SNPs after missing rate filtering")
+    
+    if args.min_qual > 0:
+        print(f"Filtering SNPs with QUAL < {args.min_qual}...")
+        filtered_vcf = filter_by_qual(filtered_vcf, args.min_qual)
+        print(f"Retained {len(filtered_vcf)} SNPs after QUAL filtering")
     
     # Identify informative SNPs
     print("Identifying informative SNPs...")
     founder_cols = [col for col in sample_cols if col in founders]
     informative_vcf = identify_informative_snps(filtered_vcf, founder_cols)
     
-    print(f"Retained {len(informative_vcf)} informative SNPs out of {len(vcf_data)}")
+    print(f"Final count: {len(informative_vcf)} informative SNPs (from initial {initial_count})")
     
     # Process each F2 sample
     for f2_id in f2_samples:
@@ -100,6 +140,3 @@ def main():
             print(f"Warning: Sample {f2_id} not found in VCF data, skipping...")
     
     print(f"Results saved to {args.output} directory")
-
-if __name__ == "__main__":
-    main()

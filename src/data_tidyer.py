@@ -103,3 +103,107 @@ def identify_informative_snps(filtered_vcf, founder_cols):
     
     informative = filtered_vcf.apply(is_informative, axis=1)
     return filtered_vcf[informative]
+
+def filter_biallelic_snps(vcf_df):
+    """
+    Filter VCF data to keep only biallelic SNPs.
+    
+    Args:
+        vcf_df (pd.DataFrame): DataFrame from read_vcf function
+        
+    Returns:
+        pd.DataFrame: Filtered VCF data with only biallelic SNPs
+    """
+    # Count comma-separated values in ALT field to determine number of alternate alleles
+    is_biallelic = vcf_df['ALT'].apply(lambda x: ',' not in x)
+    
+    # Also filter out non-SNPs (where REF or ALT length > 1)
+    is_snp = (vcf_df['REF'].str.len() == 1) & (vcf_df['ALT'].str.len() == 1)
+    
+    return vcf_df[is_biallelic & is_snp]
+
+def calculate_maf(vcf_df, sample_cols):
+    """
+    Calculate minor allele frequency for each SNP.
+    
+    Args:
+        vcf_df (pd.DataFrame): DataFrame from read_vcf function
+        sample_cols (list): List of sample column names
+        
+    Returns:
+        pd.Series: Minor allele frequencies
+    """
+    # Extract genotype values
+    gt_cols = [f'{col}_GT' for col in sample_cols]
+    
+    # Count alleles
+    def count_alleles(row):
+        allele_counts = {'0': 0, '1': 0}
+        for col in gt_cols:
+            if pd.isna(row[col]):
+                continue
+            
+            # Handle different formats (0/0, 0|0, etc.)
+            genotype = row[col].replace('|', '/').split('/')
+            for allele in genotype:
+                if allele in allele_counts:
+                    allele_counts[allele] += 1
+        
+        # Calculate MAF
+        total_alleles = sum(allele_counts.values())
+        if total_alleles == 0:
+            return 0
+        
+        min_count = min(allele_counts.values())
+        return min_count / total_alleles if total_alleles > 0 else 0
+    
+    return vcf_df.apply(count_alleles, axis=1)
+
+def filter_by_maf(vcf_df, sample_cols, min_maf=0.05):
+    """
+    Filter VCF data by minor allele frequency.
+    
+    Args:
+        vcf_df (pd.DataFrame): DataFrame from read_vcf function
+        sample_cols (list): List of sample column names
+        min_maf (float): Minimum minor allele frequency threshold
+        
+    Returns:
+        pd.DataFrame: Filtered VCF data
+    """
+    maf_values = calculate_maf(vcf_df, sample_cols)
+    return vcf_df[maf_values >= min_maf]
+
+def filter_by_missing_rate(vcf_df, sample_cols, max_missing_rate=0.2):
+    """
+    Filter VCF data by missing rate.
+    
+    Args:
+        vcf_df (pd.DataFrame): DataFrame from read_vcf function
+        sample_cols (list): List of sample column names
+        max_missing_rate (float): Maximum allowed rate of missing data
+        
+    Returns:
+        pd.DataFrame: Filtered VCF data
+    """
+    gt_cols = [f'{col}_GT' for col in sample_cols]
+    missing_rates = vcf_df[gt_cols].isna().mean(axis=1)
+    return vcf_df[missing_rates <= max_missing_rate]
+
+def filter_by_qual(vcf_df, min_qual=30):
+    """
+    Filter VCF data by QUAL value.
+    
+    Args:
+        vcf_df (pd.DataFrame): DataFrame from read_vcf function
+        min_qual (float): Minimum QUAL value threshold
+        
+    Returns:
+        pd.DataFrame: Filtered VCF data
+    """
+    # Convert QUAL to float, handling any non-numeric values
+    vcf_df['QUAL_numeric'] = pd.to_numeric(vcf_df['QUAL'], errors='coerce')
+    filtered_df = vcf_df[vcf_df['QUAL_numeric'] >= min_qual]
+    if 'QUAL_numeric' in filtered_df.columns:
+        filtered_df = filtered_df.drop('QUAL_numeric', axis=1)
+    return filtered_df
