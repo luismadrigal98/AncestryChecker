@@ -13,6 +13,10 @@ F2 individuals and their founders.
 
 """
 
+import pandas as pd
+import os
+import matplotlib.pyplot as plt
+
 def determine_ancestry(vcf_data, relationships, sample_col):
     """
     Determine the ancestry of each variant in an F2 individual.
