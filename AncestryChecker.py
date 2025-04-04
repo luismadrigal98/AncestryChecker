@@ -92,7 +92,7 @@ def main():
         # After region filtering, set initial count for subsequent reporting
         current_len = len(vcf_data)
         
-        logger.info(f"Retained {len(current_len)} variants in target region (from total {total_variants})")
+        logger.info(f"Retained {current_len} variants in target region (from total {total_variants})")
         
         if len(vcf_data) == 0:
             logger.error("Error: No variants found in specified region. Check chromosome name and positions.")
@@ -120,7 +120,7 @@ def main():
         logger.info("Filtering to keep only biallelic SNPs...")
         vcf_data = filter_biallelic_snps(vcf_data)
         current_len = len(vcf_data)
-        logger.info(f"Retained {len(current_len)} biallelic SNPs")
+        logger.info(f"Retained {current_len} biallelic SNPs")
     
     if args.min_qual > 0:
         print(f"Filtering SNPs with QUAL < {args.min_qual}...")
@@ -132,14 +132,14 @@ def main():
         logger.info(f"Filtering SNPs with MAF < {args.min_maf}...")
         vcf_data = filter_by_maf(vcf_data, sample_cols, args.min_maf)
         current_len = len(vcf_data)
-        logger.info(f"Retained {len(current_len)} SNPs after MAF filtering")
+        logger.info(f"Retained {current_len} SNPs after MAF filtering")
 
     # Filter VCF data for ancestry analysis
     logger.info("Filtering VCF data for founder/sample completeness...")
     filtered_vcf = filter_vcf_data(vcf_data, list(founders), 
                                     f2_samples, not args.no_missing)
     current_len = len(filtered_vcf)
-    logger.info(f"Retained {len(current_len)} SNPs after basic data filtering")
+    logger.info(f"Retained {current_len} SNPs after basic data filtering")
     
     # Extract genotype columns
     all_samples = list(founders) + f2_samples
