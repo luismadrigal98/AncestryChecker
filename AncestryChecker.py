@@ -54,7 +54,7 @@ def parse_arguments():
     
     # Region targeting arguments
     parser.add_argument(
-        '-r', '--ROI',
+        '--ROI',
         default=None,
         help='Region of interest in the format "chrom:start-end" (e.g., "1:1000-2000") or "chrom" only for a specific chromosome'
         )
