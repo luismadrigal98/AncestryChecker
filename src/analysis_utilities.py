@@ -61,23 +61,23 @@ def assign_ancestry(row):
             row (dict): A dictionary containing the following keys:
                 - 'F2_alleles' (list): A list of two integers representing the alleles of the F2 individual.
                 - 'RefFounder_alleles' (list): A list of two integers representing the alleles of the reference founder.
-                - 'OtherFounder_alleles' (list): A list of two integers representing the alleles of the other founder.
+                - 'AltFounder_alleles' (list): A list of two integers representing the alleles of the other founder.
         Returns:
             str: A string indicating the ancestry classification:
                 - 'Missing': F2 alleles are missing.
                 - 'Missing_Founder': Reference or other founder alleles are missing.
                 - 'RefFounder': Ancestry is from the reference founder.
-                - 'OtherFounder': Ancestry is from the other founder.
-                - 'Both': Ancestry is uninformative and could be from either founder.
-                - 'Mixed': Clear case of mixed ancestry.
+                - 'AltFounder': Ancestry is from the other founder.
+                - 'Unresolved': Ancestry is uninformative and could be from either founder.
+                - 'Mixed (het)': Clear case of mixed ancestry.
                 - 'Novel': Unexpected allele combination.
-                - 'Complex': Multiallelic variants or parsing errors.
+                - 'Complex': Multiallelic variants or parsing errors (fallback).
 
         """
         
         f2 = row['F2_alleles']
         ref = row['RefFounder_alleles']
-        other = row['OtherFounder_alleles']
+        other = row['AltFounder_alleles']
         
         # Handle missing data
         if f2 is None:
@@ -90,38 +90,36 @@ def assign_ancestry(row):
         ref.sort()
         other.sort()
         
+        # NOTE: This will only work for inbreed founders as it stands
         # Homozygous reference in F2 (0/0)
         if f2 == [0, 0]:
             if ref == [0, 0] and other != [0, 0]:
                 return 'RefFounder'  # From 664c
             elif other == [0, 0] and ref != [0, 0]:
-                return 'OtherFounder'  # From other founder
+                return 'AltFounder'  # From other founder
             elif ref == [0, 0] and other == [0, 0]:
-                return 'Both'  # Uninformative
+                return 'Unresolved'  # Uninformative
             else:
                 return 'Novel'  # Unexpected combination
         
+        # NOTE: This will only work for inbreed founders as it stands
         # Heterozygous in F2 (0/1)
         elif sorted(f2) == [0, 1]:
             if ref == [0, 0] and other == [1, 1]:
-                return 'Mixed'  # Clear case of mixed ancestry
-            elif ref == [0, 1] and other == [0, 0]:
-                return 'RefFounder'  # Heterozygosity from 664c
-            elif ref == [0, 0] and other == [0, 1]:
-                return 'OtherFounder'  # Heterozygosity from other founder
-            elif ref == [0, 1] and other == [0, 1]:
-                return 'Both'  # Could be from either
+                return 'Mixed (het)'  # Clear case of mixed ancestry (het for the variant)
+            elif ref == [1, 1] and other == [0, 0]:
+                return 'Mixed (het)'  # Clear case of mixed ancestry (het for the variant)
             else:
                 return 'Novel'  # Unexpected combination
         
         # Homozygous alternate in F2 (1/1)
         elif f2 == [1, 1]:
             if ref != [1, 1] and other == [1, 1]:
-                return 'OtherFounder'  # From other founder
+                return 'AltFounder'  # From other founder
             elif ref == [1, 1] and other != [1, 1]:
                 return 'RefFounder'  # From 664c
             elif ref == [1, 1] and other == [1, 1]:
-                return 'Both'  # Uninformative
+                return 'Unresolved'  # Uninformative
             else:
                 return 'Novel'  # Unexpected combination
         
@@ -129,7 +127,7 @@ def assign_ancestry(row):
         else:
             return 'Complex'
 
-    # Function to parse a genotype into a list of alleles (0s and 1s)
+# Function to parse a genotype into a list of alleles (0s and 1s)
 def parse_genotype(gt):
     """
     Parses a genotype string and extracts allele information.
@@ -203,14 +201,12 @@ def determine_ancestry(vcf_data, relationships, sample_col, ref_founder='664c'):
     # Identify which founder is the reference (664c)
     if founder1 == ref_founder:
         ref_founder_col = f"{founder1}_GT"
-        other_founder_col = f"{founder2}_GT"
-        ref_founder_name = "Founder1"
-        other_founder_name = "Founder2"
+        alt_founder_col = f"{founder2}_GT"
+        other_founder_name = "Alternative"
     elif founder2 == ref_founder:
         ref_founder_col = f"{founder2}_GT"
-        other_founder_col = f"{founder1}_GT"
-        ref_founder_name = "Founder2"
-        other_founder_name = "Founder1"
+        alt_founder_col = f"{founder1}_GT"
+        other_founder_name = "Alternative"
     else:
         raise ValueError(f"Reference founder 664c not found in relationship for {sample_id}")
     
@@ -222,13 +218,13 @@ def determine_ancestry(vcf_data, relationships, sample_col, ref_founder='664c'):
         'ALT': vcf_data['ALT'],
         'F2': vcf_data[sample_col],
         'RefFounder': vcf_data[ref_founder_col],
-        'OtherFounder': vcf_data[other_founder_col]
+        'AltFounder': vcf_data[alt_founder_col]
     })
     
     # Parse genotypes for all samples
     results['F2_alleles'] = results['F2'].apply(parse_genotype)
     results['RefFounder_alleles'] = results['RefFounder'].apply(parse_genotype)
-    results['OtherFounder_alleles'] = results['OtherFounder'].apply(parse_genotype)
+    results['AltFounder_alleles'] = results['AltFounder'].apply(parse_genotype)
     
     # Determine ancestry based on allele combinations
     results['Ancestry'] = results.apply(assign_ancestry, axis=1)
@@ -236,18 +232,18 @@ def determine_ancestry(vcf_data, relationships, sample_col, ref_founder='664c'):
     # Replace generic ancestry labels with specific founder names
     ancestry_mapping = {
         'RefFounder': ref_founder,
-        'OtherFounder': other_founder_name
+        'AltFounder': other_founder_name
     }
     
     results['Ancestry'] = results['Ancestry'].replace(ancestry_mapping)
     
     # Clean up temporary columns
-    results = results.drop(['F2_alleles', 'RefFounder_alleles', 'OtherFounder_alleles'], axis=1)
+    results = results.drop(['F2_alleles', 'RefFounder_alleles', 'AltFounder_alleles'], axis=1)
     
     # Rename columns for clarity in the output
     results = results.rename(columns={
         'RefFounder': ref_founder,
-        'OtherFounder': founder1 if founder2 == ref_founder else founder2
+        'AltFounder': founder1 if founder2 == ref_founder else founder2
     })
     
     return results
@@ -281,8 +277,8 @@ def plot_ancestry(ancestry_data, sample_id, output_dir):
     # Create a color map for all ancestry types
     unique_ancestry = ancestry_data['Ancestry'].unique()
     colors = {
-        'Both': 'purple',
-        'Mixed': 'green',
+        'Unresolved': 'purple',
+        'Mixed (het)': 'green',
         'Novel': 'orange',
         'Missing': 'lightgray',
         'Complex': 'black',
@@ -425,7 +421,7 @@ def plot_ancestry(ancestry_data, sample_id, output_dir):
                 color = tuple(color)
             legend_elements.append(plt.Line2D([0], [0], marker='o', color='w',
                             label=ancestry, markerfacecolor=color, markersize=8))
-                           
+
         plt.legend(handles=legend_elements, bbox_to_anchor=(1.05, 1), loc='upper left')
         
         plt.tight_layout()
