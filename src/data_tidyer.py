@@ -218,13 +218,14 @@ def filter_biallelic_snps(vcf_df):
     
     return vcf_df[is_biallelic & is_snp]
 
-def calculate_maf(vcf_df, sample_cols):
+def calculate_maf(vcf_df, sample_cols, format_fields=['GT', 'DP', 'AD', 'RO', 'QR', 'AO', 'QA', 'GL']):
     """
     Calculate minor allele frequency for each SNP.
     
     Args:
         vcf_df (pd.DataFrame): DataFrame from read_vcf function
         sample_cols (list): List of sample column names
+        format_fields (list): List of format fields to extract from VCF data
         
     Returns:
         pd.Series: Minor allele frequencies
@@ -235,14 +236,14 @@ def calculate_maf(vcf_df, sample_cols):
     # The frequency fo the minor allele is min{RO, AO} / (RO + AO)
 
     # Count alleles
-    def get_allele_frequency(row):
+    def get_allele_frequency(row, format_fields=format_fields):
         for col in sample_cols:
             if pd.isna(row[col]):
                 return pd.NA
             
             # Get the allele counts
-            RO_ix = row[col].split(':').index('RO')
-            AO_ix = row[col].split(':').index('AO')
+            RO_ix = format_fields.index('RO')
+            AO_ix = format_fields.index('AO')
             RO = int(row[col].split(":")[RO_ix])
             AO = int(row[col].split(":")[AO_ix])
         
@@ -256,7 +257,7 @@ def calculate_maf(vcf_df, sample_cols):
     
     return vcf_df.apply(get_allele_frequency, axis=1)
 
-def filter_by_maf(vcf_df, sample_cols, min_maf=0.05):
+def filter_by_maf(vcf_df, sample_cols, min_maf=0.05, format_fields=['GT', 'DP', 'AD', 'RO', 'QR', 'AO', 'QA', 'GL']):
     """
     Filter VCF data by minor allele frequency.
     
@@ -264,11 +265,12 @@ def filter_by_maf(vcf_df, sample_cols, min_maf=0.05):
         vcf_df (pd.DataFrame): DataFrame from read_vcf function
         sample_cols (list): List of sample column names
         min_maf (float): Minimum minor allele frequency threshold
+        format_fields (list): List of format fields to extract from VCF data
         
     Returns:
         pd.DataFrame: Filtered VCF data
     """
-    maf_values = calculate_maf(vcf_df, sample_cols)
+    maf_values = calculate_maf(vcf_df, sample_cols, format_fields)
     return vcf_df[maf_values >= min_maf]
 
 def filter_by_missing_rate(vcf_df, sample_cols, max_missing_rate=0.2):
