@@ -69,6 +69,9 @@ def main():
     logger.info(f"Reading VCF file: {args.vcf}")
     vcf_data = read_vcf(args.vcf)
     format_fields = vcf_data['FORMAT'].iloc[0].split(':')
+    print(format_fields)
+    print(format_fields.index('AO'))
+    print(format_fields.index('RO'))
     total_variants = len(vcf_data)  # Total before any filtering
     
     # Apply region filtering if specified
