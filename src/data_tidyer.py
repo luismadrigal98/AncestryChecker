@@ -237,24 +237,40 @@ def calculate_maf(vcf_df, sample_cols, format_fields=['GT', 'DP', 'AD', 'RO', 'Q
 
     # Count alleles
     def get_allele_frequency(row, format_fields=format_fields):
+        """Calculate MAF with error handling for truncated format strings"""
         for col in sample_cols:
             if pd.isna(row[col]):
                 return pd.NA
-            
-            # Get the allele counts
-            RO_ix = format_fields.index('RO')
-            AO_ix = format_fields.index('AO')
-            RO = int(row[col].split(":")[RO_ix])
-            AO = int(row[col].split(":")[AO_ix])
+                
+            try:
+                # Get the format parts
+                parts = row[col].split(":")
+                
+                # Make sure we have enough elements
+                if len(parts) <= max(format_fields.index('RO'), format_fields.index('AO')):
+                    return pd.NA
+                    
+                # Get the allele counts
+                RO_ix = format_fields.index('RO')
+                AO_ix = format_fields.index('AO')
+                RO = int(parts[RO_ix])
+                AO = int(parts[AO_ix])
+                
+                # Calculate the minor allele frequency
+                total = RO + AO
+                if total == 0:
+                    return pd.NA
+                maf = min(RO, AO) / total
+                return maf
+                
+            except (IndexError, ValueError) as e:
+                # Handle any parsing errors
+                return pd.NA
         
-        # Calculate the minor allele frequency
-        total = RO + AO
-        if total == 0:
-            return pd.NA
-        maf = min(RO, AO) / total
-        return maf
-    # Apply the function to each row
+        # In case no valid samples were found
+        return pd.NA
     
+    # Apply the function to each row
     return vcf_df.apply(get_allele_frequency, axis=1)
 
 def filter_by_maf(vcf_df, sample_cols, min_maf=0.05, format_fields=['GT', 'DP', 'AD', 'RO', 'QR', 'AO', 'QA', 'GL']):
