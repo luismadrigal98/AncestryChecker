@@ -69,9 +69,6 @@ def main():
     logger.info(f"Reading VCF file: {args.vcf}")
     vcf_data = read_vcf(args.vcf)
     format_fields = vcf_data['FORMAT'].iloc[0].split(':')
-    print(format_fields)
-    print(format_fields.index('AO'))
-    print(format_fields.index('RO'))
     total_variants = len(vcf_data)  # Total before any filtering
     
     # Apply region filtering if specified
@@ -133,7 +130,6 @@ def main():
 
     # Filter according to MAF values
     if args.min_maf > 0:
-        print(vcf_data.head())
         logger.info(f"Filtering SNPs with MAF < {args.min_maf}...")
         vcf_data = filter_by_maf(vcf_data, sample_cols, args.min_maf, format_fields)
         current_len = len(vcf_data)
