@@ -124,8 +124,8 @@ def main():
     
     if args.min_qual > 0:
         print(f"Filtering SNPs with QUAL < {args.min_qual}...")
-        vcf_data = filter_by_qual(filtered_vcf, args.min_qual)
-        print(f"Retained {len(filtered_vcf)} SNPs after QUAL filtering")
+        vcf_data = filter_by_qual(vcf_data, args.min_qual)
+        print(f"Retained {len(vcf_data)} SNPs after QUAL filtering")
 
     # Filter according to MAF values
     if args.min_maf > 0:
