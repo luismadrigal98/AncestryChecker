@@ -129,6 +129,7 @@ def main():
 
     # Filter according to MAF values
     if args.min_maf > 0:
+        print(vcf_data.head())
         logger.info(f"Filtering SNPs with MAF < {args.min_maf}...")
         vcf_data = filter_by_maf(vcf_data, sample_cols, args.min_maf)
         current_len = len(vcf_data)
