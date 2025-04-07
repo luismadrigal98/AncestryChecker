@@ -35,6 +35,44 @@ def normalize_chrom(x):
         # For non-numeric chromosomes (e.g., 'X', 'Y', 'MT')
         return x
 
+def filter_founder_homozygous(vcf_df, founders):
+    """
+    This function will filter out variants that are not homozygous in all founders.
+    Args:
+        vcf_df (pd.DataFrame): DataFrame from read_vcf function
+        founders (list): List of founder sample names
+    Returns:
+        pd.DataFrame: Filtered VCF data
+    """
+    # Check if founders list is not empty
+    if not founders:
+        raise ValueError("Founders list cannot be empty")
+        
+    # Check if FORMAT column exists
+    if 'FORMAT' not in vcf_df.columns:
+        raise KeyError("FORMAT column not found in the VCF DataFrame")
+
+    # Extract genotype columns (all columns after FORMAT)
+    format_col_idx = vcf_df.columns.get_loc('FORMAT')
+    genotype_cols = vcf_df.columns[format_col_idx + 1:]
+    
+    # Find columns for founders
+    founder_cols = [col for col in genotype_cols if col in founders]
+    
+    # Check if any founders were found
+    if not founder_cols:
+        raise ValueError(f"None of the founders {founders} found in the genotype columns")
+    
+    # Check if SNPs are homozygous in all founders (any homozygous genotype)
+    def is_homozygous(row):
+        genotypes = [row[col] for col in founder_cols if not pd.isna(row[col])]
+        return all(gt.split('/')[0] == gt.split('/')[-1] if '/' in gt else 
+                    gt.split('|')[0] == gt.split('|')[-1] if '|' in gt else False 
+                    for gt in genotypes)
+    
+    homozygous = vcf_df.apply(is_homozygous, axis=1)
+    return vcf_df[homozygous]
+
 def filter_by_region(vcf_df, chrom=None, start_pos=None, end_pos=None):
     """
     Filter VCF data by genomic region.

@@ -51,7 +51,11 @@ def parse_arguments():
                         help='Maximum rate of missing data per SNP (default: 1.0 = no filtering)')
     parser.add_argument('--min-qual', type=float, default=0.0, 
                         help='Minimum QUAL value for variants (default: 0.0 = no filtering)')
-    
+    parser.add_argument('--founders_homozygous', action='store_true',
+                        help='Check if founders are homozygous for all variants')
+    parser.add_argument('--retain-informative-only', action='store_true',
+                        help='Retain only informative SNPs for ancestry analysis')
+
     # Region targeting arguments
     parser.add_argument(
         '--ROI',
@@ -117,6 +121,12 @@ def main():
     logger.info(f"Initial variant count: {current_len}")
     
     # Apply QC filters
+    if args.founders_homozygous:
+        logger.info("Checking if founders are homozygous for all variants...")
+        vcf_data = filter_founders_homozygous(vcf_data, list(founders))
+        current_len = len(vcf_data)
+        logger.info(f"Retained {current_len} variants after checking founders' homozygosity")
+    
     if args.biallelic_only:
         logger.info("Filtering to keep only biallelic SNPs...")
         vcf_data = filter_biallelic_snps(vcf_data)
@@ -152,19 +162,19 @@ def main():
         logger.info(f"Retained {len(filtered_vcf)} SNPs after missing rate filtering")
     
     # Identify informative SNPs
-    logger.info("Identifying informative SNPs...")
-    founder_cols = [col for col in sample_cols if col in founders]
-    informative_vcf = identify_informative_snps(filtered_vcf, founder_cols)
-    
-    logger.info(f"Final count: {len(informative_vcf)} informative SNPs (from initial {total_variants})")
+    if retain_informative_only:
+        logger.info("Identifying informative SNPs...")
+        founder_cols = [col for col in sample_cols if col in founders]
+        filtered_vcf = identify_informative_snps(filtered_vcf, founder_cols)
+        logger.info(f"Final count: {len(filtered_vcf)} informative SNPs (from initial {total_variants})")
     
     # Process each F2 sample
     for f2_id in f2_samples:
         f2_col = f"{f2_id}_GT"
         
-        if f2_col in informative_vcf.columns:
+        if f2_col in filtered_vcf.columns:
             print(f"Analyzing ancestry for sample {f2_id}...")
-            ancestry_results = determine_ancestry(informative_vcf, relationships, f2_col, args.ref_founder)
+            ancestry_results = determine_ancestry(filtered_vcf, relationships, f2_col, args.ref_founder)
 
             if 'Novel' in ancestry_results['Ancestry'].values:
                 novel_count = (ancestry_results['Ancestry'] == 'Novel').sum()
