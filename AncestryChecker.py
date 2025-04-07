@@ -162,7 +162,7 @@ def main():
         logger.info(f"Retained {len(filtered_vcf)} SNPs after missing rate filtering")
     
     # Identify informative SNPs
-    if retain_informative_only:
+    if args.retain_informative_only:
         logger.info("Identifying informative SNPs...")
         founder_cols = [col for col in sample_cols if col in founders]
         filtered_vcf = identify_informative_snps(filtered_vcf, founder_cols)
