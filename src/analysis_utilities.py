@@ -18,6 +18,7 @@ import os
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.backends.backend_pdf import PdfPages
+import logging
 
 # Setting up logging
 logging.basicConfig(
@@ -319,7 +320,7 @@ def plot_ancestry(ancestry_results, sample_id, output_dir):
                 
                 # Plot with explicit color to avoid the warning
                 ax.scatter(subset['POS'], y_pos, color=color, s=10, 
-                           alpha=0.7, label=ancestry if i == 0 else "")
+                            alpha=0.7, label=ancestry if i == 0 else "")
             
             # Configure axis
             ax.set_xlim(0, max_pos * 1.05)
@@ -343,8 +344,8 @@ def plot_ancestry(ancestry_results, sample_id, output_dir):
             labels.append(ancestry)
             
         fig.legend(handles=handles, labels=labels, 
-                  loc='lower center', ncol=min(3, len(labels)),
-                  bbox_to_anchor=(0.5, 0.01), frameon=True)
+                    loc='lower center', ncol=min(3, len(labels)),
+                    bbox_to_anchor=(0.5, 0.01), frameon=True)
         
         # Add title
         plt.suptitle(f'Ancestry Distribution for Sample {sample_id}', 
@@ -380,7 +381,7 @@ def plot_ancestry(ancestry_results, sample_id, output_dir):
                 y_pos = 0.5 + (np.random.rand(len(subset)) - 0.5) * 0.1
                 
                 ax.scatter(subset['POS'], y_pos, color=color, s=15,
-                          alpha=0.7, label=ancestry)
+                            alpha=0.7, label=ancestry)
             
             # Configure axis
             ax.set_xlim(0, max_pos * 1.05)
@@ -408,8 +409,8 @@ def plot_ancestry(ancestry_results, sample_id, output_dir):
         html_file = os.path.join(output_dir, f"{sample_id}_ancestry_plots.html")
         
         fig = make_subplots(rows=len(chromosomes), cols=1,
-                         subplot_titles=[f"Chromosome {chrom}" for chrom in chromosomes],
-                         vertical_spacing=0.05)
+                            subplot_titles=[f"Chromosome {chrom}" for chrom in chromosomes],
+                            vertical_spacing=0.05)
         
         for i, chrom in enumerate(chromosomes):
             chrom_data = ancestry_results[ancestry_results['CHROM'] == chrom]
@@ -437,7 +438,7 @@ def plot_ancestry(ancestry_results, sample_id, output_dir):
             
             # Update axis properties
             fig.update_yaxes(range=[0, 1], showticklabels=False, 
-                           title_text="", row=i+1, col=1)
+                            title_text="", row=i+1, col=1)
             
             if i < len(chromosomes) - 1:
                 fig.update_xaxes(showticklabels=False, row=i+1, col=1)
