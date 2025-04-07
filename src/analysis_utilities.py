@@ -19,6 +19,14 @@ import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.backends.backend_pdf import PdfPages
 
+# Setting up logging
+logging.basicConfig(
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    level=logging.INFO
+)
+
+logger = logging.getLogger(__name__)
+
 def normalize_genotype(gt):    
         """
         Normalizes a genotype string by handling missing values, extracting the genotype part,
@@ -53,79 +61,73 @@ def normalize_genotype(gt):
             
         return gt
 
-def assign_ancestry(row):  
-        """
-        Determines the ancestry of an individual based on allele information from F2, 
-        reference founder, and other founder.
-        Args:
-            row (dict): A dictionary containing the following keys:
-                - 'F2_alleles' (list): A list of two integers representing the alleles of the F2 individual.
-                - 'RefFounder_alleles' (list): A list of two integers representing the alleles of the reference founder.
-                - 'AltFounder_alleles' (list): A list of two integers representing the alleles of the other founder.
-        Returns:
-            str: A string indicating the ancestry classification:
-                - 'Missing': F2 alleles are missing.
-                - 'Missing_Founder': Reference or other founder alleles are missing.
-                - 'RefFounder': Ancestry is from the reference founder.
-                - 'AltFounder': Ancestry is from the other founder.
-                - 'Unresolved': Ancestry is uninformative and could be from either founder.
-                - 'Mixed (het)': Clear case of mixed ancestry.
-                - 'Novel': Unexpected allele combination.
-                - 'Complex': Multiallelic variants or parsing errors (fallback).
-
-        """
+def assign_ancestry(row):
+    """
+    Determines the ancestry of an individual based on allele information from F2 and founders.
+    Uses an adaptive approach that doesn't assume specific allele combinations.
+    
+    Args:
+        row (dict): Dictionary with F2_alleles, RefFounder_alleles, and AltFounder_alleles
         
-        f2 = row['F2_alleles']
-        ref = row['RefFounder_alleles']
-        other = row['AltFounder_alleles']
+    Returns:
+        str: Ancestry classification
+    """
+    f2 = row['F2_alleles']
+    ref = row['RefFounder_alleles']
+    alt = row['AltFounder_alleles']
+    
+    # Handle missing data
+    if f2 is None:
+        return 'Missing'
+    if ref is None or alt is None:
+        return 'Missing_Founder'
         
-        # Handle missing data
-        if f2 is None:
-            return 'Missing'
-        if ref is None or other is None:
-            return 'Missing_Founder'
-            
-        # For simplicity, sort the alleles to handle phasing differences
-        f2.sort()
-        ref.sort()
-        other.sort()
-        
-        # NOTE: This will only work for inbreed founders as it stands
-        # Homozygous reference in F2 (0/0)
-        if f2 == [0, 0]:
-            if ref == [0, 0] and other != [0, 0]:
-                return 'RefFounder'  # From 664c
-            elif other == [0, 0] and ref != [0, 0]:
-                return 'AltFounder'  # From other founder
-            elif ref == [0, 0] and other == [0, 0]:
-                return 'Unresolved'  # Uninformative
-            else:
-                return 'Novel'  # Unexpected combination
-        
-        # NOTE: This will only work for inbreed founders as it stands
-        # Heterozygous in F2 (0/1)
-        elif sorted(f2) == [0, 1]:
-            if ref == [0, 0] and other == [1, 1]:
-                return 'Mixed (het)'  # Clear case of mixed ancestry (het for the variant)
-            elif ref == [1, 1] and other == [0, 0]:
-                return 'Mixed (het)'  # Clear case of mixed ancestry (het for the variant)
-            else:
-                return 'Novel'  # Unexpected combination
-        
-        # Homozygous alternate in F2 (1/1)
-        elif f2 == [1, 1]:
-            if ref != [1, 1] and other == [1, 1]:
-                return 'AltFounder'  # From other founder
-            elif ref == [1, 1] and other != [1, 1]:
-                return 'RefFounder'  # From 664c
-            elif ref == [1, 1] and other == [1, 1]:
-                return 'Unresolved'  # Uninformative
-            else:
-                return 'Novel'  # Unexpected combination
-        
-        # Handle other cases (multiallelic variants or parsing errors)
+    # For simplicity, sort the alleles to handle phasing differences
+    f2 = sorted(f2)
+    ref = sorted(ref)
+    alt = sorted(alt)
+    
+    # Check if founders have different genotypes (informative variant)
+    is_informative = ref != alt
+    
+    # Handle F2 homozygous cases
+    if f2[0] == f2[1]:  # F2 is homozygous
+        if f2 == ref and f2 != alt and is_informative:
+            return 'RefFounder'  # F2 matches reference founder only
+        elif f2 != ref and f2 == alt and is_informative:
+            return 'AltFounder'  # F2 matches alternative founder only
+        elif f2 == ref and f2 == alt:
+            return 'Unresolved'  # Both founders have the same genotype
         else:
-            return 'Complex'
+            return 'Novel'  # F2 doesn't match either founder
+    
+    # Handle F2 heterozygous cases
+    elif f2[0] != f2[1]:  # F2 is heterozygous
+        # Check if F2's heterozygosity could come from the two founders
+        # This checks if one allele matches ref and the other matches alt
+        ref_set = set(ref)
+        alt_set = set(alt)
+        f2_set = set(f2)
+        
+        # Perfect mixed ancestry: each allele from a different founder
+        if len(ref_set) == 1 and len(alt_set) == 1 and ref_set != alt_set:
+            if f2_set == ref_set.union(alt_set):
+                return 'Mixed (het)'
+            
+        # Check if F2 is matching one founder exactly
+        if f2 == ref and f2 != alt:
+            return 'RefFounder'
+        elif f2 != ref and f2 == alt:
+            return 'AltFounder'
+        elif f2 == ref and f2 == alt:
+            return 'Unresolved'
+        
+        # Novel heterozygous combinations
+        return 'Novel'
+    
+    # Handle other unexpected cases (should be rare)
+    else:
+        return 'Complex'
 
 # Function to parse a genotype into a list of alleles (0s and 1s)
 def parse_genotype(gt):
@@ -248,188 +250,219 @@ def determine_ancestry(vcf_data, relationships, sample_col, ref_founder='664c'):
     
     return results
 
-def plot_ancestry(ancestry_data, sample_id, output_dir):
+def plot_ancestry(ancestry_results, sample_id, output_dir):
     """
-    Create a visualization of ancestry across chromosomes.
+    Create improved ancestry plots for a sample.
     
     Args:
-        ancestry_data (pd.DataFrame): Ancestry assignment data
-        sample_id (str): ID of the F2 sample
-        output_dir (str): Output directory
+        ancestry_results (pd.DataFrame): DataFrame with ancestry analysis results
+        sample_id (str): ID of the sample to plot
+        output_dir (str): Directory to save plots
     """
-    # Create the output directory if it doesn't exist
-    os.makedirs(output_dir, exist_ok=True)
-    
-    # Save the complete data to a CSV file
-    ancestry_data.to_csv(os.path.join(output_dir, f'{sample_id}_ancestry_full.csv'), index=False)
-    
-    # Get unique chromosomes
-    chromosomes = ancestry_data['CHROM'].unique()
-    
-    if len(chromosomes) == 0:
-        print(f"Warning: No data to plot for sample {sample_id}")
-        return
-    
-    # Create a multi-page PDF for all chromosomes
+    import os
+    import matplotlib.pyplot as plt
+    import matplotlib.patches as mpatches
+    import numpy as np
     from matplotlib.backends.backend_pdf import PdfPages
-    pdf_path = os.path.join(output_dir, f'{sample_id}_ancestry_plots.pdf')
     
-    # Create a color map for all ancestry types
-    unique_ancestry = ancestry_data['Ancestry'].unique()
-    colors = {
-        'Unresolved': 'purple',
-        'Mixed (het)': 'green',
-        'Novel': 'orange',
-        'Missing': 'lightgray',
-        'Complex': 'black',
-        'Missing_Founder': 'darkgray'
+    # Create output directory if it doesn't exist
+    os.makedirs(output_dir, exist_ok=True)
+    output_file = os.path.join(output_dir, f"{sample_id}_ancestry_plots.pdf")
+    
+    # Get unique chromosomes and sort them
+    chromosomes = sorted(ancestry_results['CHROM'].unique())
+    
+    # Define colors for ancestry categories - matching your existing names
+    ancestry_colors = {
+        'Missing': '#e0e0e0',       # Light gray
+        'Unresolved': '#a9a9a9',    # Dark gray
+        'Alternative': '#1f77b4',   # Blue
+        'Novel': '#ff7f0e',         # Orange  
+        '664c': '#2ca02c',          # Green (use the actual reference founder name)
+        'Mixed (het)': '#9467bd'    # Purple
     }
     
-    # Add colors for founder-specific ancestry
-    # Use different shades of blue/red to distinguish between different founders
-    founder_names = [a for a in unique_ancestry if a not in colors]
-    blues = plt.cm.Blues(np.linspace(0.6, 1.0, (len(founder_names) + 1) // 2))
-    reds = plt.cm.Reds(np.linspace(0.6, 1.0, len(founder_names) // 2 + 1))
-    
-    for i, founder in enumerate(founder_names):
-        if i % 2 == 0:  # Alternate between blues and reds
-            colors[founder] = blues[i // 2]
-        else:
-            colors[founder] = reds[i // 2]
-    
-    with PdfPages(pdf_path) as pdf:
-        # Create a summary page
-        plt.figure(figsize=(8, 6))
-        plt.axis('off')
-        plt.text(0.1, 0.9, f"Ancestry Analysis for Sample: {sample_id}", fontsize=16)
-        plt.text(0.1, 0.8, f"Total variants analyzed: {len(ancestry_data)}", fontsize=12)
+    # Group data by chromosome for plotting
+    with PdfPages(output_file) as pdf:
+        # Create a summary plot with all chromosomes
+        fig, axes = plt.subplots(len(chromosomes), 1, 
+                                figsize=(10, max(3, len(chromosomes) * 0.7)))
         
-        # Add ancestry distribution information
-        ancestry_counts = ancestry_data['Ancestry'].value_counts()
-        plt.text(0.1, 0.7, "Ancestry Distribution:", fontsize=14)
-        y_pos = 0.65
-        for ancestry, count in ancestry_counts.items():
-            percentage = 100 * count / len(ancestry_data)
-            color = colors.get(ancestry, 'black')
-            if isinstance(color, (list, np.ndarray)):  # Handle RGB arrays
-                plt.text(0.1, y_pos, f"{ancestry}: {count} variants ({percentage:.2f}%)", 
-                        fontsize=10, color=color)
-            else:
-                plt.text(0.1, y_pos, f"{ancestry}: {count} variants ({percentage:.2f}%)", 
-                        fontsize=10, color=color)
-            y_pos -= 0.05
-        
-        pdf.savefig()
-        plt.close()
-        
-        # Then create individual plots for each chromosome
-        for chrom in chromosomes:
-            chrom_data = ancestry_data[ancestry_data['CHROM'] == chrom]
+        if len(chromosomes) == 1:
+            axes = [axes]  # Make it iterable if there's only one chromosome
             
+        for i, chrom in enumerate(chromosomes):
+            chrom_data = ancestry_results[ancestry_results['CHROM'] == chrom]
+            
+            # Skip if no data for this chromosome
             if len(chrom_data) == 0:
                 continue
                 
-            plt.figure(figsize=(12, 6))
+            # Get axis for this chromosome
+            ax = axes[i]
             
-            # Plot positions for each ancestry type
-            for ancestry in unique_ancestry:
-                if ancestry in chrom_data['Ancestry'].values:
-                    subset = chrom_data[chrom_data['Ancestry'] == ancestry]
-                    color = colors.get(ancestry, 'gray')
-                    plt.scatter(subset['POS'], [0.5] * len(subset), 
-                                c=color, s=5, label=ancestry)
+            # Add light background
+            max_pos = chrom_data['POS'].max() if len(chrom_data) > 0 else 1000
+            ax.axhspan(0.3, 0.7, color='#f8f8f8', alpha=0.7)
             
-            # Format x-axis to show positions in Mb
-            def format_mb(x, pos):
-                return f'{x/1e6:.1f}'
-                
-            from matplotlib.ticker import FuncFormatter
-            plt.gca().xaxis.set_major_formatter(FuncFormatter(format_mb))
-            
-            # Set plot title and labels
-            plt.title(f'Chromosome {chrom} - Sample {sample_id}')
-            plt.xlabel('Position (Mb)')
-            plt.yticks([])
-            
-            # Add region markers
-            min_pos = min(chrom_data['POS'])
-            max_pos = max(chrom_data['POS'])
-            plt.xlim(min_pos, max_pos)
-            
-            # Add legend OUTSIDE the plot area
-            plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
-            plt.tight_layout()
-            
-            # Save to PDF
-            pdf.savefig(bbox_inches='tight')
-            
-            # Also save individual PNGs for easier viewing
-            plt.savefig(os.path.join(output_dir, f'{sample_id}_{chrom}_ancestry.png'), 
-                        bbox_inches='tight')
-            plt.close()
-        
-        # Create a chromosome overview plot
-        plt.figure(figsize=(15, 10))
-        
-        # Try to sort chromosomes numerically if possible
-        try:
-            chrom_numeric = [int(str(c).lower().replace('chr', '')) for c in chromosomes]
-            sorted_indices = sorted(range(len(chrom_numeric)), key=lambda k: chrom_numeric[k])
-            sorted_chroms = [chromosomes[i] for i in sorted_indices]
-        except:
-            # If not numeric, just use the original order
-            sorted_chroms = chromosomes
-            
-        # Create a summary plot showing ancestry distribution across all chromosomes
-        for i, chrom in enumerate(sorted_chroms):
-            chrom_data = ancestry_data[ancestry_data['CHROM'] == chrom]
-            
-            if len(chrom_data) == 0:
-                continue
-            
-            # Normalize positions to 0-1 range for consistent width
-            min_pos = min(chrom_data['POS'])
-            max_pos = max(chrom_data['POS'])
-            range_pos = max_pos - min_pos
-            
-            # Plot each chromosome as a row
-            y_pos = len(sorted_chroms) - i
-            
-            # Plot background for chromosome
-            plt.plot([0, 1], [y_pos, y_pos], 'k-', lw=1)
-            
-            # Add markers for each variant, colored by ancestry
-            for ancestry in unique_ancestry:
+            # Plot each ancestry category
+            for ancestry in ancestry_results['Ancestry'].unique():
                 subset = chrom_data[chrom_data['Ancestry'] == ancestry]
-                if len(subset) > 0:
-                    # Normalize positions
-                    norm_pos = [(p - min_pos)/range_pos for p in subset['POS']]
-                    plt.scatter(norm_pos, [y_pos] * len(subset), 
-                                c=colors.get(ancestry, 'gray'), 
-                                s=3, alpha=0.7)
+                if len(subset) == 0:
+                    continue
+                
+                # Get color, default to gray if not in our color map
+                color = ancestry_colors.get(ancestry, '#cccccc')
+                
+                # Add slight y-jitter to avoid perfect overlaps
+                y_pos = 0.5 + (np.random.rand(len(subset)) - 0.5) * 0.1
+                
+                # Plot with explicit color to avoid the warning
+                ax.scatter(subset['POS'], y_pos, color=color, s=10, 
+                           alpha=0.7, label=ancestry if i == 0 else "")
+            
+            # Configure axis
+            ax.set_xlim(0, max_pos * 1.05)
+            ax.set_ylim(0.2, 0.8)
+            ax.set_yticks([])
+            
+            if i == len(chromosomes) - 1:
+                ax.set_xlabel('Position (bp)')
+            else:
+                ax.set_xticklabels([])
+                
+            ax.set_ylabel(f'Chr {chrom}')
+            ax.grid(True, linestyle='--', alpha=0.4)
         
-        plt.yticks(range(1, len(sorted_chroms)+1), sorted_chroms)
-        plt.title(f'Ancestry Overview - Sample {sample_id}')
-        plt.xlabel('Normalized Position')
-        plt.ylabel('Chromosome')
+        # Add single legend at the bottom
+        handles = []
+        labels = []
+        for ancestry in sorted(ancestry_results['Ancestry'].unique()):
+            color = ancestry_colors.get(ancestry, '#cccccc')
+            handles.append(mpatches.Patch(color=color, label=ancestry))
+            labels.append(ancestry)
+            
+        fig.legend(handles=handles, labels=labels, 
+                  loc='lower center', ncol=min(3, len(labels)),
+                  bbox_to_anchor=(0.5, 0.01), frameon=True)
         
-        # Create a custom legend
-        legend_elements = []
-        for ancestry in unique_ancestry:
-            color = colors.get(ancestry, 'gray')
-            if isinstance(color, (list, np.ndarray)):
-                color = tuple(color)
-            legend_elements.append(plt.Line2D([0], [0], marker='o', color='w',
-                            label=ancestry, markerfacecolor=color, markersize=8))
-
-        plt.legend(handles=legend_elements, bbox_to_anchor=(1.05, 1), loc='upper left')
+        # Add title
+        plt.suptitle(f'Ancestry Distribution for Sample {sample_id}', 
+                    fontsize=14, y=0.98)
         
+        # Adjust layout to make room for the legend
         plt.tight_layout()
-        pdf.savefig(bbox_inches='tight')
+        plt.subplots_adjust(bottom=0.15)
         
-        # Save the overview as a separate image too
-        plt.savefig(os.path.join(output_dir, f'{sample_id}_ancestry_overview.png'), 
-                    bbox_inches='tight')
+        # Save to PDF
+        pdf.savefig(fig)
         plt.close()
+        
+        # Generate individual chromosome plots for more detail
+        for chrom in chromosomes:
+            chrom_data = ancestry_results[ancestry_results['CHROM'] == chrom]
+            if len(chrom_data) == 0:
+                continue
+                
+            fig, ax = plt.subplots(figsize=(10, 3))
+            max_pos = chrom_data['POS'].max()
+            
+            # Add background
+            ax.axhspan(0.3, 0.7, color='#f8f8f8', alpha=0.7)
+            
+            # Plot each ancestry category
+            for ancestry in ancestry_results['Ancestry'].unique():
+                subset = chrom_data[chrom_data['Ancestry'] == ancestry]
+                if len(subset) == 0:
+                    continue
+                    
+                color = ancestry_colors.get(ancestry, '#cccccc')
+                y_pos = 0.5 + (np.random.rand(len(subset)) - 0.5) * 0.1
+                
+                ax.scatter(subset['POS'], y_pos, color=color, s=15,
+                          alpha=0.7, label=ancestry)
+            
+            # Configure axis
+            ax.set_xlim(0, max_pos * 1.05)
+            ax.set_ylim(0.2, 0.8)
+            ax.set_yticks([])
+            ax.set_xlabel('Position (bp)')
+            ax.set_title(f'Chromosome {chrom} - Sample {sample_id}')
+            ax.grid(True, linestyle='--', alpha=0.4)
+            
+            # Add legend
+            ax.legend(loc='upper right', frameon=True)
+            
+            # Save and close
+            plt.tight_layout()
+            pdf.savefig(fig)
+            plt.close()
     
-    print(f"Created ancestry plots for {sample_id} in {pdf_path}")
+    logger.info(f"Created ancestry plots for {sample_id} in {output_file}")
+    
+    # Optional: Create interactive HTML plot if plotly is available
+    try:
+        import plotly.graph_objects as go
+        from plotly.subplots import make_subplots
+        
+        html_file = os.path.join(output_dir, f"{sample_id}_ancestry_plots.html")
+        
+        fig = make_subplots(rows=len(chromosomes), cols=1,
+                         subplot_titles=[f"Chromosome {chrom}" for chrom in chromosomes],
+                         vertical_spacing=0.05)
+        
+        for i, chrom in enumerate(chromosomes):
+            chrom_data = ancestry_results[ancestry_results['CHROM'] == chrom]
+            
+            # Plot each ancestry type
+            for ancestry in ancestry_results['Ancestry'].unique():
+                subset = chrom_data[chrom_data['Ancestry'] == ancestry]
+                if len(subset) == 0:
+                    continue
+                
+                color = ancestry_colors.get(ancestry, '#cccccc')
+                
+                fig.add_trace(
+                    go.Scatter(
+                        x=subset['POS'],
+                        y=[0.5] * len(subset),
+                        mode='markers',
+                        name=ancestry,
+                        marker=dict(color=color, size=6),
+                        legendgroup=ancestry,
+                        showlegend=(i == 0)  # Only show in legend once
+                    ),
+                    row=i+1, col=1
+                )
+            
+            # Update axis properties
+            fig.update_yaxes(range=[0, 1], showticklabels=False, 
+                           title_text="", row=i+1, col=1)
+            
+            if i < len(chromosomes) - 1:
+                fig.update_xaxes(showticklabels=False, row=i+1, col=1)
+            else:
+                fig.update_xaxes(title_text="Position (bp)", row=i+1, col=1)
+        
+        # Update layout
+        fig.update_layout(
+            title=f"Ancestry Distribution for Sample {sample_id}",
+            height=max(500, 200 * len(chromosomes)),
+            width=900,
+            legend=dict(
+                orientation="h",
+                yanchor="bottom",
+                y=-0.2,
+                xanchor="center",
+                x=0.5
+            )
+        )
+        
+        # Save HTML
+        fig.write_html(html_file)
+        logger.info(f"Created interactive HTML ancestry plot at {html_file}")
+        
+    except ImportError:
+        logger.info("Plotly not available - skipping interactive plot")
+    
+    return output_file
