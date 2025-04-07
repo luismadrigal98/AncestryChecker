@@ -22,7 +22,7 @@ from src.analysis_utilities import determine_ancestry, plot_ancestry
 from src.data_tidyer import (
     read_relationship_map, filter_vcf_data, identify_informative_snps,
     filter_biallelic_snps, filter_by_maf, filter_by_missing_rate, filter_by_qual,
-    filter_by_region, filter_founders_homozygous
+    filter_by_region, filter_founder_homozygous
 )
 
 # Setting up logging
@@ -123,7 +123,7 @@ def main():
     # Apply QC filters
     if args.founders_homozygous:
         logger.info("Checking if founders are homozygous for all variants...")
-        vcf_data = filter_founders_homozygous(vcf_data, list(founders))
+        vcf_data = filter_founder_homozygous(vcf_data, list(founders))
         current_len = len(vcf_data)
         logger.info(f"Retained {current_len} variants after checking founders' homozygosity")
     
