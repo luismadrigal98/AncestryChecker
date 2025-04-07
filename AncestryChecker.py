@@ -22,7 +22,7 @@ from src.analysis_utilities import determine_ancestry, plot_ancestry
 from src.data_tidyer import (
     read_relationship_map, filter_vcf_data, identify_informative_snps,
     filter_biallelic_snps, filter_by_maf, filter_by_missing_rate, filter_by_qual,
-    filter_by_region
+    filter_by_region, filter_founders_homozygous
 )
 
 # Setting up logging

@@ -364,7 +364,7 @@ def plot_ancestry(ancestry_data, sample_id, output_dir):
             pdf.savefig(bbox_inches='tight')
             
             # Also save individual PNGs for easier viewing
-            plt.savefig(os.path.join(output_dir, f'{sample_id}_chr{chrom}_ancestry.png'), 
+            plt.savefig(os.path.join(output_dir, f'{sample_id}_{chrom}_ancestry.png'), 
                         bbox_inches='tight')
             plt.close()
         
