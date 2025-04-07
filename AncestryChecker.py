@@ -121,12 +121,6 @@ def main():
     logger.info(f"Initial variant count: {current_len}")
     
     # Apply QC filters
-    if args.founders_homozygous:
-        logger.info("Checking if founders are homozygous for all variants...")
-        vcf_data = filter_founder_homozygous(vcf_data, list(founders))
-        current_len = len(vcf_data)
-        logger.info(f"Retained {current_len} variants after checking founders' homozygosity")
-    
     if args.biallelic_only:
         logger.info("Filtering to keep only biallelic SNPs...")
         vcf_data = filter_biallelic_snps(vcf_data)
@@ -152,6 +146,12 @@ def main():
     current_len = len(filtered_vcf)
     logger.info(f"Retained {current_len} SNPs after basic data filtering")
     
+    if args.founders_homozygous:
+        logger.info("Checking if founders are homozygous for all variants...")
+        filtered_vcf = filter_founder_homozygous(filtered_vcf, list(founders))
+        current_len = len(filtered_vcf)
+        logger.info(f"Retained {current_len} variants after checking founders' homozygosity")
+
     # Extract genotype columns
     all_samples = list(founders) + f2_samples
     
