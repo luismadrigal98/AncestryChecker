@@ -63,6 +63,16 @@ def parse_arguments():
         help='Region of interest in the format "chrom:start-end" (e.g., "1:1000-2000") or "chrom" only for a specific chromosome'
         )
     
+    # Additional arguments
+    parser.add_argument(
+        '--vcf_from_caller',
+        type = str,
+        default = 'freebayes',
+        choices = ['freebayes', 'gatk', 'samtools'],
+        help = 'Variant caller used to generate the VCF file (default: freebayes)'
+    )
+
+
     return parser.parse_args()
 
 def main():
@@ -135,7 +145,7 @@ def main():
     # Filter according to MAF values
     if args.min_maf > 0:
         logger.info(f"Filtering SNPs with MAF < {args.min_maf}...")
-        vcf_data = filter_by_maf(vcf_data, sample_cols, args.min_maf, format_fields)
+        vcf_data = filter_by_maf(vcf_data, sample_cols, args.min_maf, format_fields, args.vcf_from_caller)
         current_len = len(vcf_data)
         logger.info(f"Retained {current_len} SNPs after MAF filtering")
 

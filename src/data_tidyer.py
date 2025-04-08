@@ -254,7 +254,7 @@ def filter_biallelic_snps(vcf_df):
     
     return vcf_df[is_biallelic & is_snp]
 
-def calculate_maf(vcf_df, sample_cols, format_fields=['GT', 'DP', 'AD', 'RO', 'QR', 'AO', 'QA', 'GL']):
+def calculate_maf(vcf_df, sample_cols, format_fields=['GT', 'DP', 'AD', 'RO', 'QR', 'AO', 'QA', 'GL'], caller = "freebayes"):
     """
     Calculate minor allele frequency for each SNP.
     
@@ -262,6 +262,7 @@ def calculate_maf(vcf_df, sample_cols, format_fields=['GT', 'DP', 'AD', 'RO', 'Q
         vcf_df (pd.DataFrame): DataFrame from read_vcf function
         sample_cols (list): List of sample column names
         format_fields (list): List of format fields to extract from VCF data
+        caller (str): Variant caller used (e.g., "freebayes", "gatk"). This is relevant because the vcf format may differ.
         
     Returns:
         pd.Series: Minor allele frequencies
@@ -272,32 +273,39 @@ def calculate_maf(vcf_df, sample_cols, format_fields=['GT', 'DP', 'AD', 'RO', 'Q
     # The frequency fo the minor allele is min{RO, AO} / (RO + AO)
 
     # Count alleles
-    def get_allele_frequency(row, format_fields=format_fields):
-        """Calculate MAF with error handling for truncated format strings"""
-        for col in sample_cols:
-            if pd.isna(row[col]):
-                return pd.NA
+    elif caller == 'bcftools':
+        # Get the format parts
+        parts = row[col].split(':')
+        
+        # Get the format field indices
+        format_str = row['FORMAT']
+        format_fields_list = format_str.split(':')
+        
+        # Find AD field position
+        if 'AD' in format_fields_list:
+            ad_idx = format_fields_list.index('AD')
+            if ad_idx < len(parts):
+                ad_values = parts[ad_idx].split(',')
+                if len(ad_values) >= 2:
+                    try:
+                        RO = int(ad_values[0])  # Reference allele count
+                        AO = int(ad_values[1])  # Alternate allele count
+                        
+                        # Calculate the minor allele frequency
+                        total = RO + AO
+                        if total == 0 or total < 10:  # Consider a minimum depth threshold
+                            return pd.NA
+                        maf = min(RO, AO) / total
+                        return maf
+                    except ValueError:
+                        return pd.NA
+        
+        return pd.NA
                 
-            try:
-                # Get the format parts
-                parts = row[col].split(":")
-                
-                # Make sure we have enough elements
-                if len(parts) <= max(format_fields.index('RO'), format_fields.index('AO')):
-                    return pd.NA
-                    
-                # Get the allele counts
-                RO_ix = format_fields.index('RO')
-                AO_ix = format_fields.index('AO')
-                RO = int(parts[RO_ix])
-                AO = int(parts[AO_ix])
-                
-                # Calculate the minor allele frequency
-                total = RO + AO
-                if total == 0:
-                    return pd.NA
-                maf = min(RO, AO) / total
-                return maf
+                elif caller == gatk:
+                    raise NotImplementedError("GATK format parsing not implemented yet.")
+                else:
+                    raise ValueError(f"Unknown variant caller: {caller}")
                 
             except (IndexError, ValueError) as e:
                 # Handle any parsing errors
@@ -309,7 +317,7 @@ def calculate_maf(vcf_df, sample_cols, format_fields=['GT', 'DP', 'AD', 'RO', 'Q
     # Apply the function to each row
     return vcf_df.apply(get_allele_frequency, axis=1)
 
-def filter_by_maf(vcf_df, sample_cols, min_maf=0.05, format_fields=['GT', 'DP', 'AD', 'RO', 'QR', 'AO', 'QA', 'GL']):
+def filter_by_maf(vcf_df, sample_cols, min_maf=0.05, format_fields=['GT', 'DP', 'AD', 'RO', 'QR', 'AO', 'QA', 'GL'], caller = "freebayes"):
     """
     Filter VCF data by minor allele frequency.
     
@@ -322,7 +330,7 @@ def filter_by_maf(vcf_df, sample_cols, min_maf=0.05, format_fields=['GT', 'DP', 
     Returns:
         pd.DataFrame: Filtered VCF data
     """
-    maf_values = calculate_maf(vcf_df, sample_cols, format_fields)
+    maf_values = calculate_maf(vcf_df, sample_cols, format_fields, caller)
     return vcf_df[maf_values >= min_maf]
 
 def filter_by_missing_rate(vcf_df, sample_cols, max_missing_rate=0.2):

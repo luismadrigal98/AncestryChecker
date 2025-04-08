@@ -251,29 +251,26 @@ def determine_ancestry(vcf_data, relationships, sample_col, ref_founder='664c'):
     
     return results
 
-def plot_ancestry(ancestry_results, sample_id, output_dir):
+def plot_ancestry(ancestry_results, sample_id, output_dir, window_size=1000000):
     """
-    Create improved ancestry plots for a sample.
+    Create ancestry plots for a sample using stacked bar plots.
     
     Args:
         ancestry_results (pd.DataFrame): DataFrame with ancestry analysis results
         sample_id (str): ID of the sample to plot
         output_dir (str): Directory to save plots
+        window_size (int): Size of the genomic window for aggregation (default: 1 Mb)
     """
     import os
     import matplotlib.pyplot as plt
-    import matplotlib.patches as mpatches
-    import numpy as np
+    import pandas as pd
     from matplotlib.backends.backend_pdf import PdfPages
     
     # Create output directory if it doesn't exist
     os.makedirs(output_dir, exist_ok=True)
     output_file = os.path.join(output_dir, f"{sample_id}_ancestry_plots.pdf")
     
-    # Get unique chromosomes and sort them
-    chromosomes = sorted(ancestry_results['CHROM'].unique())
-    
-    # Define colors for ancestry categories - matching your existing names
+    # Define colors for ancestry categories
     ancestry_colors = {
         'Missing': '#e0e0e0',       # Light gray
         'Unresolved': '#a9a9a9',    # Dark gray
@@ -283,187 +280,50 @@ def plot_ancestry(ancestry_results, sample_id, output_dir):
         'Mixed (het)': '#9467bd'    # Purple
     }
     
-    # Group data by chromosome for plotting
+    # Group data by chromosome and window
+    ancestry_results['Window'] = (ancestry_results['POS'] // window_size) * window_size
+    grouped = ancestry_results.groupby(['CHROM', 'Window', 'Ancestry']).size().reset_index(name='Count')
+    
+    # Normalize counts to proportions within each window
+    grouped['Proportion'] = grouped.groupby(['CHROM', 'Window'])['Count'].transform(lambda x: x / x.sum())
+    
+    # Get unique chromosomes
+    chromosomes = sorted(ancestry_results['CHROM'].unique())
+    
+    # Create PDF for plots
     with PdfPages(output_file) as pdf:
-        # Create a summary plot with all chromosomes
-        fig, axes = plt.subplots(len(chromosomes), 1, 
-                                figsize=(10, max(3, len(chromosomes) * 0.7)))
-        
-        if len(chromosomes) == 1:
-            axes = [axes]  # Make it iterable if there's only one chromosome
-            
-        for i, chrom in enumerate(chromosomes):
-            chrom_data = ancestry_results[ancestry_results['CHROM'] == chrom]
-            
-            # Skip if no data for this chromosome
-            if len(chrom_data) == 0:
-                continue
-                
-            # Get axis for this chromosome
-            ax = axes[i]
-            
-            # Add light background
-            max_pos = chrom_data['POS'].max() if len(chrom_data) > 0 else 1000
-            ax.axhspan(0.3, 0.7, color='#f8f8f8', alpha=0.7)
-            
-            # Plot each ancestry category
-            for ancestry in ancestry_results['Ancestry'].unique():
-                subset = chrom_data[chrom_data['Ancestry'] == ancestry]
-                if len(subset) == 0:
-                    continue
-                
-                # Get color, default to gray if not in our color map
-                color = ancestry_colors.get(ancestry, '#cccccc')
-                
-                # Add slight y-jitter to avoid perfect overlaps
-                y_pos = 0.5 + (np.random.rand(len(subset)) - 0.5) * 0.1
-                
-                # Plot with explicit color to avoid the warning
-                ax.scatter(subset['POS'], y_pos, color=color, s=10, 
-                            alpha=0.7, label=ancestry if i == 0 else "")
-            
-            # Configure axis
-            ax.set_xlim(0, max_pos * 1.05)
-            ax.set_ylim(0.2, 0.8)
-            ax.set_yticks([])
-            
-            if i == len(chromosomes) - 1:
-                ax.set_xlabel('Position (bp)')
-            else:
-                ax.set_xticklabels([])
-                
-            ax.set_ylabel(f'Chr {chrom}')
-            ax.grid(True, linestyle='--', alpha=0.4)
-        
-        # Add single legend at the bottom
-        handles = []
-        labels = []
-        for ancestry in sorted(ancestry_results['Ancestry'].unique()):
-            color = ancestry_colors.get(ancestry, '#cccccc')
-            handles.append(mpatches.Patch(color=color, label=ancestry))
-            labels.append(ancestry)
-            
-        fig.legend(handles=handles, labels=labels, 
-                    loc='lower center', ncol=min(3, len(labels)),
-                    bbox_to_anchor=(0.5, 0.01), frameon=True)
-        
-        # Add title
-        plt.suptitle(f'Ancestry Distribution for Sample {sample_id}', 
-                    fontsize=14, y=0.98)
-        
-        # Adjust layout to make room for the legend
-        plt.tight_layout()
-        plt.subplots_adjust(bottom=0.15)
-        
-        # Save to PDF
-        pdf.savefig(fig)
-        plt.close()
-        
-        # Generate individual chromosome plots for more detail
         for chrom in chromosomes:
-            chrom_data = ancestry_results[ancestry_results['CHROM'] == chrom]
-            if len(chrom_data) == 0:
+            chrom_data = grouped[grouped['CHROM'] == chrom]
+            if chrom_data.empty:
                 continue
-                
-            fig, ax = plt.subplots(figsize=(10, 3))
-            max_pos = chrom_data['POS'].max()
             
-            # Add background
-            ax.axhspan(0.3, 0.7, color='#f8f8f8', alpha=0.7)
+            # Pivot data for stacked bar plot
+            pivot_data = chrom_data.pivot(index='Window', columns='Ancestry', values='Proportion').fillna(0)
+            pivot_data = pivot_data[list(ancestry_colors.keys())]  # Ensure consistent order of categories
             
-            # Plot each ancestry category
-            for ancestry in ancestry_results['Ancestry'].unique():
-                subset = chrom_data[chrom_data['Ancestry'] == ancestry]
-                if len(subset) == 0:
-                    continue
-                    
-                color = ancestry_colors.get(ancestry, '#cccccc')
-                y_pos = 0.5 + (np.random.rand(len(subset)) - 0.5) * 0.1
-                
-                ax.scatter(subset['POS'], y_pos, color=color, s=15,
-                            alpha=0.7, label=ancestry)
+            # Create stacked bar plot
+            fig, ax = plt.subplots(figsize=(12, 4))
+            bottom = None
+            for ancestry, color in ancestry_colors.items():
+                if ancestry in pivot_data:
+                    ax.bar(
+                        pivot_data.index, pivot_data[ancestry], width=window_size, 
+                        bottom=bottom, color=color, label=ancestry, align='edge'
+                    )
+                    bottom = pivot_data[ancestry] if bottom is None else bottom + pivot_data[ancestry]
             
-            # Configure axis
-            ax.set_xlim(0, max_pos * 1.05)
-            ax.set_ylim(0.2, 0.8)
-            ax.set_yticks([])
-            ax.set_xlabel('Position (bp)')
+            # Configure plot
             ax.set_title(f'Chromosome {chrom} - Sample {sample_id}')
-            ax.grid(True, linestyle='--', alpha=0.4)
+            ax.set_xlabel('Genomic Position (bp)')
+            ax.set_ylabel('Proportion')
+            ax.set_xlim(0, ancestry_results[ancestry_results['CHROM'] == chrom]['POS'].max())
+            ax.set_ylim(0, 1)
+            ax.legend(loc='upper center', bbox_to_anchor=(0.5, -0.1), ncol=3, frameon=False)
+            ax.grid(axis='y', linestyle='--', alpha=0.7)
             
-            # Add legend
-            ax.legend(loc='upper right', frameon=True)
-            
-            # Save and close
+            # Save plot to PDF
             plt.tight_layout()
             pdf.savefig(fig)
             plt.close()
     
     logger.info(f"Created ancestry plots for {sample_id} in {output_file}")
-    
-    # Optional: Create interactive HTML plot if plotly is available
-    try:
-        import plotly.graph_objects as go
-        from plotly.subplots import make_subplots
-        
-        html_file = os.path.join(output_dir, f"{sample_id}_ancestry_plots.html")
-        
-        fig = make_subplots(rows=len(chromosomes), cols=1,
-                            subplot_titles=[f"Chromosome {chrom}" for chrom in chromosomes],
-                            vertical_spacing=0.05)
-        
-        for i, chrom in enumerate(chromosomes):
-            chrom_data = ancestry_results[ancestry_results['CHROM'] == chrom]
-            
-            # Plot each ancestry type
-            for ancestry in ancestry_results['Ancestry'].unique():
-                subset = chrom_data[chrom_data['Ancestry'] == ancestry]
-                if len(subset) == 0:
-                    continue
-                
-                color = ancestry_colors.get(ancestry, '#cccccc')
-                
-                fig.add_trace(
-                    go.Scatter(
-                        x=subset['POS'],
-                        y=[0.5] * len(subset),
-                        mode='markers',
-                        name=ancestry,
-                        marker=dict(color=color, size=6),
-                        legendgroup=ancestry,
-                        showlegend=(i == 0)  # Only show in legend once
-                    ),
-                    row=i+1, col=1
-                )
-            
-            # Update axis properties
-            fig.update_yaxes(range=[0, 1], showticklabels=False, 
-                            title_text="", row=i+1, col=1)
-            
-            if i < len(chromosomes) - 1:
-                fig.update_xaxes(showticklabels=False, row=i+1, col=1)
-            else:
-                fig.update_xaxes(title_text="Position (bp)", row=i+1, col=1)
-        
-        # Update layout
-        fig.update_layout(
-            title=f"Ancestry Distribution for Sample {sample_id}",
-            height=max(500, 200 * len(chromosomes)),
-            width=900,
-            legend=dict(
-                orientation="h",
-                yanchor="bottom",
-                y=-0.2,
-                xanchor="center",
-                x=0.5
-            )
-        )
-        
-        # Save HTML
-        fig.write_html(html_file)
-        logger.info(f"Created interactive HTML ancestry plot at {html_file}")
-        
-    except ImportError:
-        logger.info("Plotly not available - skipping interactive plot")
-    
-    return output_file
