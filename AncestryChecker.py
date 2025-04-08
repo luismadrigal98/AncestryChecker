@@ -55,6 +55,10 @@ def parse_arguments():
                         help='Check if founders are homozygous for all variants')
     parser.add_argument('--retain-informative-only', action='store_true',
                         help='Retain only informative SNPs for ancestry analysis')
+    parser.add_argument('--allele_depth_thr',
+                        type=float, default=0.0,
+                        help='Minimum allele depth threshold for filtering (default: 0.0 = no filtering). THIS IS ONLY VALID FOR BCFTOOLS VCFs.',
+                        required=False)
 
     # Region targeting arguments
     parser.add_argument(
@@ -141,6 +145,11 @@ def main():
         print(f"Filtering SNPs with QUAL < {args.min_qual}...")
         vcf_data = filter_by_qual(vcf_data, args.min_qual)
         print(f"Retained {len(vcf_data)} SNPs after QUAL filtering")
+
+    if args.allele_depth_thr > 0:
+        print(f"Filtering SNPs with allele depth < {args.allele_depth_thr}...")
+        vcf_data = filter_by_qual(vcf_data, args.allele_depth_thr)
+        print(f"Retained {len(vcf_data)} SNPs after allele depth filtering")
 
     # Filter according to MAF values
     if args.min_maf > 0:

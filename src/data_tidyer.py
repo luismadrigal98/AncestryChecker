@@ -236,6 +236,93 @@ def identify_informative_snps(filtered_vcf, founder_cols):
     informative = filtered_vcf.apply(is_informative, axis=1)
     return filtered_vcf[informative]
 
+def filter_by_allele_depth(vcf_df, sample_cols, founder_cols=None, min_depth=5, caller="freebayes"):
+    """
+    Filter VCF data by allele depth.
+    
+    Args:
+        vcf_df (pd.DataFrame): DataFrame from read_vcf function
+        sample_cols (list): List of sample column names
+        founder_cols (list, optional): List of founder column names
+        min_depth (int): Minimum depth threshold for filtering
+        caller (str): Variant caller used (e.g., "freebayes", "bcftools", "gatk")
+    
+    Returns:
+        pd.DataFrame: Filtered VCF data with sufficient read depth
+    """
+    if founder_cols is None:
+        founder_cols = []
+    
+    all_cols = sample_cols + founder_cols
+    filtered_df = vcf_df.copy()
+    
+    # Extract allele depth for each sample
+    for col in all_cols:
+        if col not in filtered_df.columns:
+            logger.warning(f"Sample column {col} not found in VCF data")
+            continue
+            
+        filtered_df[f'{col}_AD'] = filtered_df.apply(
+            lambda row: extract_allele_depth(row[col], row['FORMAT'], caller), 
+            axis=1
+        )
+    
+    # Filter rows by minimum depth
+    depth_cols = [f'{col}_AD' for col in all_cols if f'{col}_AD' in filtered_df.columns]
+    if depth_cols:
+        filtered_df = filtered_df[filtered_df[depth_cols].fillna(0).min(axis=1) >= min_depth]
+        logger.info(f"Depth filter: {len(filtered_df)}/{len(vcf_df)} variants retained ({len(filtered_df)/len(vcf_df)*100:.1f}%)")
+    else:
+        logger.warning("No depth columns found for filtering")
+    
+    # Drop temporary depth columns
+    filtered_df = filtered_df.drop(columns=[col for col in filtered_df.columns if col.endswith('_AD')], errors='ignore')
+    
+    return filtered_df
+
+def extract_allele_depth(value, format_str, caller="freebayes"):
+    """
+    Extract the total allele depth from a VCF sample field.
+    
+    Args:
+        value (str): Sample field value from VCF
+        format_str (str): FORMAT field specifying the data structure
+        caller (str): Variant caller used
+    
+    Returns:
+        int or np.nan: Total allele depth or np.nan if not available
+    """
+    if pd.isna(value) or pd.isna(format_str):
+        return np.nan
+        
+    format_fields = format_str.split(':')
+    value_fields = value.split(':')
+    
+    # Handle different variant callers
+    try:
+        if caller == "freebayes":
+            # In freebayes, can use DP field directly or sum RO+AO
+            if 'DP' in format_fields and len(value_fields) > format_fields.index('DP'):
+                dp_idx = format_fields.index('DP')
+                return int(value_fields[dp_idx])
+            elif all(field in format_fields for field in ['RO', 'AO']):
+                ro_idx = format_fields.index('RO')
+                ao_idx = format_fields.index('AO')
+                if len(value_fields) > max(ro_idx, ao_idx):
+                    return int(value_fields[ro_idx]) + int(value_fields[ao_idx])
+        
+        elif caller in ["bcftools", "gatk"]:
+            # For bcftools/GATK, use AD field (comma-separated values)
+            if 'AD' in format_fields:
+                ad_idx = format_fields.index('AD')
+                if len(value_fields) > ad_idx:
+                    ad_values = value_fields[ad_idx].split(',')
+                    return sum(int(ad) for ad in ad_values if ad.isdigit())
+    except (ValueError, IndexError):
+        pass
+    
+    return np.nan
+
 def filter_biallelic_snps(vcf_df):
     """
     Filter VCF data to keep only biallelic SNPs.
