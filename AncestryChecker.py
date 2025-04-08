@@ -68,7 +68,7 @@ def parse_arguments():
         '--vcf_from_caller',
         type = str,
         default = 'freebayes',
-        choices = ['freebayes', 'gatk', 'samtools'],
+        choices = ['freebayes', 'gatk', 'bcftools'],
         help = 'Variant caller used to generate the VCF file (default: freebayes)'
     )
 
