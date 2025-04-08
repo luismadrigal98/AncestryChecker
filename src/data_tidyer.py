@@ -273,36 +273,71 @@ def calculate_maf(vcf_df, sample_cols, format_fields=['GT', 'DP', 'AD', 'RO', 'Q
     # The frequency fo the minor allele is min{RO, AO} / (RO + AO)
 
     # Count alleles
-    elif caller == 'bcftools':
-        # Get the format parts
-        parts = row[col].split(':')
-        
-        # Get the format field indices
-        format_str = row['FORMAT']
-        format_fields_list = format_str.split(':')
-        
-        # Find AD field position
-        if 'AD' in format_fields_list:
-            ad_idx = format_fields_list.index('AD')
-            if ad_idx < len(parts):
-                ad_values = parts[ad_idx].split(',')
-                if len(ad_values) >= 2:
+    def get_allele_frequency(row, format_fields=format_fields):
+        """Calculate MAF with error handling for truncated format strings"""
+        for col in sample_cols:
+            if pd.isna(row[col]):
+                return pd.NA
+                
+            try:
+                if caller == 'freebayes':
+                
+                    # Get the format parts
+                    parts = row[col].split(":")
+                    
+                    # Make sure we have enough elements
+                    if len(parts) <= max(format_fields.index('RO'), format_fields.index('AO')):
+                        return pd.NA
+                        
+                    # Get the allele counts
+                    RO_ix = format_fields.index('RO')
+                    AO_ix = format_fields.index('AO')
+                    RO = int(parts[RO_ix])
+                    AO = int(parts[AO_ix])
+                    
+                    # Calculate the minor allele frequency
+                    total = RO + AO
+                    if total == 0:
+                        return pd.NA
+                    maf = min(RO, AO) / total
+                    return maf
+                
+                elif caller == 'bcftools':
+                    # Get format definition and verify AD field exists
+                    format_str = row['FORMAT']
+                    if 'AD' not in format_str.split(':'):
+                        return pd.NA
+                    
+                    # Find position of AD field in the format string
+                    format_parts = format_str.split(':')
+                    ad_index = format_parts.index('AD')
+                    
+                    # Split sample data and get AD values
+                    parts = row[col].split(':')
+                    
+                    # Check if we have enough parts to reach AD index
+                    if len(parts) <= ad_index:
+                        return pd.NA
+                    
+                    # Extract allele depths
+                    ad_values = parts[ad_index].split(',')
+                    if len(ad_values) < 2:
+                        return pd.NA
+                    
                     try:
                         RO = int(ad_values[0])  # Reference allele count
                         AO = int(ad_values[1])  # Alternate allele count
                         
                         # Calculate the minor allele frequency
                         total = RO + AO
-                        if total == 0 or total < 10:  # Consider a minimum depth threshold
+                        if total == 0:
                             return pd.NA
                         maf = min(RO, AO) / total
                         return maf
-                    except ValueError:
+                    except (ValueError, IndexError):
                         return pd.NA
-        
-        return pd.NA
                 
-                elif caller == gatk:
+                elif caller == 'gatk':
                     raise NotImplementedError("GATK format parsing not implemented yet.")
                 else:
                     raise ValueError(f"Unknown variant caller: {caller}")
