@@ -221,17 +221,41 @@ def plot_ancestry(ancestry_df, sample_id, output_dir):
     # Create figure
     fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 10))
     
-    # Plot overall proportions
+    # Define a consistent color mapping for ancestry types
+    color_map = {
+        '664c': '#FF9999',
+        'Novel': '#66B2FF',
+        'Unresolved': '#99FF99',
+        'Missing': '#FFCC99'
+    }
+    
+    # Add colors for other ancestry types that might be present
+    # (like founder names or mixed ancestry)
+    potential_ancestry_types = set(ancestry_df['Ancestry'].unique())
+    base_colors = ['#c2c2f0', '#ffb347', '#a5d6a7', '#ef9a9a', '#90caf9']
+    color_index = 0
+    
+    for ancestry in potential_ancestry_types:
+        if ancestry not in color_map:
+            if color_index < len(base_colors):
+                color_map[ancestry] = base_colors[color_index]
+                color_index += 1
+            else:
+                # Generate a random color if we run out of predefined colors
+                color_map[ancestry] = f"#{np.random.randint(0, 0xFFFFFF):06x}"
+    
+    # Plot overall proportions with consistent colors
+    pie_colors = [color_map.get(ancestry, '#DDDDDD') for ancestry in total_counts.index]
     total_counts.plot.pie(
         ax=ax1, 
         autopct='%1.1f%%',
         startangle=90,
-        colors=['#FF9999', '#66B2FF', '#99FF99', '#FFCC99', '#c2c2f0']
+        colors=pie_colors
     )
     ax1.set_title(f'Overall Ancestry Proportions for {sample_id}')
     ax1.set_ylabel('')
     
-    # Plot by chromosome
+    # Plot by chromosome with consistent colors
     chroms = sorted(chrom_counts.keys())
     ancestry_types = sorted(set().union(*[set(counts.keys()) for counts in chrom_counts.values()]))
     
@@ -240,7 +264,7 @@ def plot_ancestry(ancestry_df, sample_id, output_dir):
     
     for i, ancestry in enumerate(ancestry_types):
         values = [chrom_counts[chrom].get(ancestry, 0) for chrom in chroms]
-        ax2.bar(x + i * width, values, width, label=ancestry)
+        ax2.bar(x + i * width, values, width, label=ancestry, color=color_map.get(ancestry, '#DDDDDD'))
     
     ax2.set_title(f'Ancestry Composition by Chromosome for {sample_id}')
     ax2.set_xlabel('Chromosome')
