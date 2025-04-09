@@ -203,6 +203,123 @@ def determine_ancestry(vcf_df, relationships, samples_to_analyze):
         
     return results
 
+def plot_chromosomal_painting(ancestry_df, sample_id, output_dir, color_map=None):
+    """
+    Create a chromosomal painting to visualize recombination events.
+    
+    This function plots the ancestry assignments along each chromosome,
+    showing recombination breakpoints where ancestry changes.
+    """
+    if not os.path.exists(output_dir):
+        os.makedirs(output_dir)
+    
+    # Create default color map if not provided
+    if color_map is None:
+        color_map = {
+            '664c': '#FF9999',
+            'Novel': '#66B2FF',
+            'Unresolved': '#99FF99',
+            'Missing': '#FFCC99'
+        }
+        
+        # Add colors for other ancestry types
+        potential_ancestry_types = set(ancestry_df['Ancestry'].unique())
+        base_colors = ['#c2c2f0', '#ffb347', '#a5d6a7', '#ef9a9a', '#90caf9']
+        color_index = 0
+        
+        for ancestry in potential_ancestry_types:
+            if ancestry not in color_map:
+                if color_index < len(base_colors):
+                    color_map[ancestry] = base_colors[color_index]
+                    color_index += 1
+                else:
+                    color_map[ancestry] = f"#{np.random.randint(0, 0xFFFFFF):06x}"
+    
+    # Get unique chromosomes and sort them
+    chromosomes = sorted(ancestry_df['CHROM'].unique())
+    num_chromosomes = len(chromosomes)
+    
+    # Create figure
+    fig_height = max(8, 1 + num_chromosomes * 0.5)  # Adjust height based on number of chromosomes
+    fig, axes = plt.subplots(num_chromosomes, 1, figsize=(12, fig_height), sharex=False)
+    
+    # If there's only one chromosome, axes won't be an array
+    if num_chromosomes == 1:
+        axes = [axes]
+    
+    # Set overall title
+    fig.suptitle(f'Chromosomal Painting for {sample_id}', fontsize=16)
+    
+    # Create legend handles
+    legend_handles = []
+    for ancestry, color in color_map.items():
+        if ancestry in ancestry_df['Ancestry'].values:
+            legend_handles.append(plt.Rectangle((0, 0), 1, 1, color=color, label=ancestry))
+    
+    # Plot each chromosome
+    for i, chromosome in enumerate(chromosomes):
+        ax = axes[i]
+        
+        # Filter data for this chromosome
+        chrom_data = ancestry_df[ancestry_df['CHROM'] == chromosome].copy()
+        chrom_data = chrom_data.sort_values('POS')
+        
+        if len(chrom_data) == 0:
+            ax.text(0.5, 0.5, f"No data for {chromosome}", 
+                    horizontalalignment='center', verticalalignment='center')
+            ax.set_ylabel(chromosome)
+            ax.set_xticks([])
+            ax.set_yticks([])
+            continue
+            
+        # Group by consecutive ancestry segments
+        chrom_data['segment'] = (chrom_data['Ancestry'] != chrom_data['Ancestry'].shift()).cumsum()
+        segments = chrom_data.groupby('segment')
+        
+        # Plot segments
+        for _, segment in segments:
+            start_pos = segment['POS'].min()
+            end_pos = segment['POS'].max()
+            ancestry = segment['Ancestry'].iloc[0]
+            color = color_map.get(ancestry, '#DDDDDD')
+            
+            # Plot the segment
+            ax.axvspan(start_pos, end_pos, color=color, alpha=0.7)
+            
+            # Add text label if segment is large enough
+            segment_width = end_pos - start_pos
+            chromosome_span = chrom_data['POS'].max() - chrom_data['POS'].min()
+            if segment_width / chromosome_span > 0.05:  # Only label segments that are >5% of chromosome length
+                mid_pos = (start_pos + end_pos) / 2
+                ax.text(mid_pos, 0.5, ancestry, 
+                       horizontalalignment='center', verticalalignment='center',
+                       fontsize=8, fontweight='bold')
+        
+        # Set axis labels and limits
+        ax.set_xlim(chrom_data['POS'].min(), chrom_data['POS'].max())
+        ax.set_ylim(0, 1)
+        ax.set_ylabel(chromosome)
+        
+        # Remove y-ticks
+        ax.set_yticks([])
+        
+        # Format x-axis with Mbp scale
+        ax.xaxis.set_major_formatter(plt.FuncFormatter(lambda x, _: f'{x/1000000:.1f}'))
+        
+        # Only show x-label for the bottom subplot
+        if i == num_chromosomes - 1:
+            ax.set_xlabel('Position (Mbp)')
+        
+    # Add legend to the figure
+    fig.legend(handles=legend_handles, loc='upper center', ncol=min(len(color_map), 4),
+               bbox_to_anchor=(0.5, 0.05), frameon=False)
+    
+    plt.tight_layout(rect=[0, 0.05, 1, 0.95])  # Adjust for the legend
+    plt.savefig(f"{output_dir}/{sample_id}_chromosomal_painting.png", dpi=300)
+    plt.close()
+    
+    logger.info(f"Saved chromosomal painting for {sample_id}")
+
 def plot_ancestry(ancestry_df, sample_id, output_dir):
     """Plot ancestry results."""
     if not os.path.exists(output_dir):
@@ -278,6 +395,9 @@ def plot_ancestry(ancestry_df, sample_id, output_dir):
     plt.close()
     
     logger.info(f"Saved ancestry plot for {sample_id}")
+    
+    # Return the color map so it can be reused for chromosome painting
+    return color_map
 
 def main():
     """Main function."""
@@ -310,7 +430,10 @@ def main():
         result_df.to_csv(f"{args.output}/{sample}_ancestry_details.csv", index=False)
         
         # Plot ancestry
-        plot_ancestry(result_df, sample, args.output)
+        color_map = plot_ancestry(result_df, sample, args.output)
+        
+        # Plot chromosomal painting to visualize recombination
+        plot_chromosomal_painting(result_df, sample, args.output, color_map)
         
         # Print summary statistics
         ancestry_counts = result_df['Ancestry'].value_counts()
