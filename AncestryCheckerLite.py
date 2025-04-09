@@ -70,7 +70,17 @@ def read_vcf(path):
 def read_relationship_map(path):
     """Read relationship map."""
     logger.info(f"Reading relationship map: {path}")
-    relationships = pd.read_csv(path, dtype=str)
+    
+    # Read CSV with no header, and assign column names
+    relationships = pd.read_csv(
+        path, 
+        sep=r'\s+',      # Use whitespace as separator
+        header=None,     # No header row in the file
+        names=['Sample', 'Generation', 'Founder1', 'Founder2'],  # Assign column names
+        dtype=str
+    )
+    
+    logger.info(f"Found {len(relationships)} samples in relationship map")
     return relationships
 
 def extract_gt(value, format_str):
